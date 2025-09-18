@@ -4,6 +4,8 @@ import { Camera, Database, Shield, Search, Filter, Sun, Moon, Brain } from 'luci
 import './App.css';
 
 function App() {
+  console.log('App component rendering...'); // Debug log
+  
   const [activeTab, setActiveTab] = useState('identify');
   const [mushrooms, setMushrooms] = useState([]);
   const [filteredMushrooms, setFilteredMushrooms] = useState([]);
@@ -18,6 +20,8 @@ function App() {
   const [featureCodes, setFeatureCodes] = useState(null);
   const [mlPrediction, setMlPrediction] = useState(null);
   const [selectedFeatures, setSelectedFeatures] = useState({});
+
+  console.log('State initialized:', { mushrooms, isDarkMode }); // Debug log
 
   useEffect(() => {
     // Check system preference and initialize theme
@@ -38,9 +42,23 @@ function App() {
   }, [isDarkMode]);
 
   useEffect(() => {
-    fetchMushrooms();
-    checkKaggleStatus();
-    fetchFeatureCodes();
+    // Temporarily comment out API calls to test rendering
+    // fetchMushrooms();
+    // checkKaggleStatus();
+    // fetchFeatureCodes();
+    
+    // Set some dummy data for testing
+    setMushrooms([
+      {
+        id: 1,
+        name: "Test Mushroom",
+        scientific_name: "Testus mushroomus",
+        edible: true,
+        poisonous: false,
+        psychedelic: false,
+        image_url: "/images/chanterelle.jpg"
+      }
+    ]);
   }, []);
 
   useEffect(() => {
@@ -50,6 +68,25 @@ function App() {
   const toggleDarkMode = () => {
     setIsDarkMode(!isDarkMode);
   };
+
+  const filterMushrooms = useCallback(() => {
+    let filtered = mushrooms;
+
+    // Apply search filter
+    if (searchQuery) {
+      filtered = filtered.filter(mushroom =>
+        mushroom.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        mushroom.scientific_name.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
+
+    // Apply property filter
+    if (activeFilter !== 'all') {
+      filtered = filtered.filter(mushroom => mushroom[activeFilter]);
+    }
+
+    setFilteredMushrooms(filtered);
+  }, [mushrooms, searchQuery, activeFilter]);
 
   const checkKaggleStatus = async () => {
     try {
@@ -83,24 +120,16 @@ function App() {
     }
   };
 
-  const filterMushrooms = useCallback(() => {
-    let filtered = mushrooms;
-
-    // Apply search filter
-    if (searchQuery) {
-      filtered = filtered.filter(mushroom =>
-        mushroom.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        mushroom.scientific_name.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
-
-    // Apply property filter
-    if (activeFilter !== 'all') {
-      filtered = filtered.filter(mushroom => mushroom[activeFilter]);
-    }
-
-    setFilteredMushrooms(filtered);
-  }, [mushrooms, searchQuery, activeFilter]);
+  // Simple fallback render for debugging
+  if (mushrooms.length === 0) {
+    console.log('Rendering fallback...'); // Debug log
+    return (
+      <div style={{ padding: '20px', textAlign: 'center' }}>
+        <h1>Loading Mushroom App...</h1>
+        <p>If you see this, the component is mounting but data is loading</p>
+      </div>
+    );
+  }
 
   const handleFileUpload = (event) => {
     const file = event.target.files[0];
@@ -328,14 +357,15 @@ function App() {
         </div>
       </div>
 
-      {/* Kaggle Dataset Status */}
+      {/* Model Status */}
       {kaggleStatus && (
-        <div className={`kaggle-status ${kaggleStatus.safety_model_available || kaggleStatus.image_model_available ? 'kaggle-available' : 'kaggle-unavailable'}`}>
+        <div className={`kaggle-status ${kaggleStatus.safety_model_available || kaggleStatus.image_model_available || kaggleStatus.roboflow_available ? 'kaggle-available' : 'kaggle-unavailable'}`}>
           <Database size={20} />
           <span>
-            Kaggle Dataset: {kaggleStatus.message}
+            Models: {kaggleStatus.message}
             {kaggleStatus.safety_model_available && ' • Safety Model Active'}
-            {kaggleStatus.image_model_available && ' • Image Classification Active'}
+            {kaggleStatus.image_model_available && ' • Local Image Classification Active'}
+            {kaggleStatus.roboflow_available && ' • Roboflow AI Active'}
           </span>
         </div>
       )}
@@ -378,8 +408,14 @@ function App() {
         <div className="results-section">
           <div className="results-header">
             <h3>Identification Results</h3>
-            <div className={`method-badge ${identificationResults.method === 'ML Image Classification' ? 'method-ml' : 'method-sim'}`}>
-              {identificationResults.method === 'ML Image Classification' ? <Brain size={16} /> : <Database size={16} />}
+            <div className={`method-badge ${
+              identificationResults.method === 'Roboflow AI' ? 'method-roboflow' :
+              identificationResults.method === 'Local ML Model' ? 'method-ml' : 
+              'method-sim'
+            }`}>
+              {identificationResults.method === 'Roboflow AI' ? <Brain size={16} /> :
+               identificationResults.method === 'Local ML Model' ? <Brain size={16} /> : 
+               <Database size={16} />}
               {identificationResults.method}
             </div>
           </div>

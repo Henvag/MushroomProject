@@ -8,9 +8,15 @@ import pandas as pd
 from PIL import Image
 import io
 import base64
+import requests
 
 app = Flask(__name__)
 CORS(app)
+
+# Roboflow configuration
+ROBOFLOW_API_URL = "https://detect.roboflow.com"
+ROBOFLOW_API_KEY = "n2XmYmT5JN31JxXN6T14"  # Private API key
+ROBOFLOW_MODEL_ID = "mushroom-nzafz/1"
 
 # Load mushroom database
 def load_mushroom_data():
@@ -249,14 +255,23 @@ def identify_mushroom():
             return jsonify({"error": "No image file provided"}), 400
         
         image_file = request.files['image']
+        image = Image.open(image_file.stream).convert('RGB')
         
-        # Check if we have the image classification model
+        # Try Roboflow inference first
+        roboflow_result = roboflow_inference(image_file)
+        if roboflow_result:
+            processed_result = process_roboflow_result(roboflow_result, image)
+            if processed_result:
+                return jsonify({
+                    "matches": [processed_result],
+                    "message": "Roboflow AI identification complete - Always verify with experts before consumption!",
+                    "method": "Roboflow AI"
+                })
+        
+        # Fall back to local ML model if Roboflow fails
         if ml_models.get('image_model') and ml_models.get('class_mapping'):
             try:
                 # Process the image with the ML model
-                image = Image.open(image_file.stream).convert('RGB')
-                
-                # Transform image for model input
                 image_tensor = ml_models['image_transform'](image).unsqueeze(0)
                 
                 # Make prediction
@@ -313,12 +328,12 @@ def identify_mushroom():
                 
                 return jsonify({
                     "matches": results,
-                    "message": "ML image identification complete - Always verify with experts before consumption!",
-                    "method": "ML Image Classification"
+                    "message": "Local ML image identification complete - Always verify with experts before consumption!",
+                    "method": "Local ML Model"
                 })
                 
             except Exception as e:
-                print(f"ML image classification failed: {e}")
+                print(f"Local ML image classification failed: {e}")
                 # Fall back to simulation
                 return simulate_identification()
         else:
@@ -426,6 +441,110 @@ def find_mushroom_by_class(class_name):
         return next((m for m in mushrooms if m['name'] == database_name), None)
     
     return None
+
+def roboflow_inference(image_file):
+    """Perform inference using Roboflow cloud API"""
+    try:
+        print("🍄 Starting Roboflow inference...")
+        
+        # Save the uploaded image temporarily
+        temp_image_path = 'temp_upload.jpg'
+        image_file.save(temp_image_path)
+        print(f"📁 Image saved to {temp_image_path}")
+        
+        # Make API request to Roboflow
+        url = f"{ROBOFLOW_API_URL}/{ROBOFLOW_MODEL_ID}"
+        headers = {
+            "Authorization": f"Bearer {ROBOFLOW_API_KEY}"
+        }
+        
+        print(f"🌐 Making API request to: {url}")
+        
+        # Read the image file and send to API with timeout
+        with open(temp_image_path, 'rb') as f:
+            files = {'file': f}
+            response = requests.post(url, headers=headers, files=files, timeout=10)
+            
+        print(f"📡 API response status: {response.status_code}")
+        
+        # Clean up temporary file
+        if os.path.exists(temp_image_path):
+            os.remove(temp_image_path)
+            print("🗑️ Temporary file cleaned up")
+        
+        if response.status_code == 200:
+            result = response.json()
+            print("✅ Roboflow inference successful!")
+            return result
+        else:
+            print(f"❌ Roboflow API error: {response.status_code} - {response.text}")
+            return None
+            
+    except requests.exceptions.Timeout:
+        print("⏰ Roboflow API timeout - request took too long")
+        return None
+    except requests.exceptions.ConnectionError:
+        print("🔌 Roboflow API connection error - check internet connection")
+        return None
+    except Exception as e:
+        print(f"❌ Roboflow inference error: {e}")
+        return None
+
+def process_roboflow_result(roboflow_result, uploaded_image):
+    """Process Roboflow inference result and format for API response"""
+    if not roboflow_result or 'predictions' not in roboflow_result:
+        return None
+    
+    predictions = roboflow_result['predictions']
+    if not predictions:
+        return None
+    
+    # Convert uploaded image to base64 for display
+    image_buffer = io.BytesIO()
+    uploaded_image.save(image_buffer, format='PNG')
+    image_base64 = base64.b64encode(image_buffer.getvalue()).decode('utf-8')
+    uploaded_image_data = f"data:image/png;base64,{image_base64}"
+    
+    # Get the top prediction
+    top_prediction = predictions[0]
+    class_name = top_prediction['class']
+    confidence = top_prediction['confidence']
+    
+    # Map Roboflow classes to our database
+    roboflow_to_database = {
+        'edible': {'edible': True, 'poisonous': False, 'psychedelic': False},
+        'poisonous': {'edible': False, 'poisonous': True, 'psychedelic': False}
+    }
+    
+    safety_info = roboflow_to_database.get(class_name, {'edible': False, 'poisonous': False, 'psychedelic': False})
+    
+    # Create result object
+    result = {
+        'id': 999,  # Special ID for Roboflow results
+        'name': f"Roboflow: {class_name.title()}",
+        'scientific_name': f"AI Classification: {class_name}",
+        'edible': safety_info['edible'],
+        'poisonous': safety_info['poisonous'],
+        'psychedelic': safety_info['psychedelic'],
+        'taste': get_roboflow_taste_description(class_name),
+        'habitat': 'AI Classification - Verify with experts',
+        'season': 'AI Classification - Verify with experts',
+        'confidence': confidence,
+        'uploaded_image': uploaded_image_data,
+        'ml_class': class_name,
+        'method': 'Roboflow AI'
+    }
+    
+    return result
+
+def get_roboflow_taste_description(class_name):
+    """Get taste description for Roboflow classification"""
+    if class_name == 'edible':
+        return "✅ AI classified as edible - ALWAYS verify with experts before consumption!"
+    elif class_name == 'poisonous':
+        return "☠️ AI classified as poisonous - DO NOT CONSUME! Can cause severe illness or death!"
+    else:
+        return "❓ AI classification uncertain - Consult with mycologists before consumption"
 
 @app.route('/api/search', methods=['GET'])
 def search_mushrooms():
@@ -542,6 +661,32 @@ def predict_safety():
     except Exception as e:
         return jsonify({"error": f"Prediction failed: {str(e)}"}), 500
 
+@app.route('/api/roboflow-identify', methods=['POST'])
+def roboflow_identify():
+    """Identify mushroom using only Roboflow model"""
+    try:
+        if 'image' not in request.files:
+            return jsonify({"error": "No image file provided"}), 400
+        
+        image_file = request.files['image']
+        image = Image.open(image_file.stream).convert('RGB')
+        
+        # Perform Roboflow inference
+        roboflow_result = roboflow_inference(image_file)
+        if roboflow_result:
+            processed_result = process_roboflow_result(roboflow_result, image)
+            if processed_result:
+                return jsonify({
+                    "matches": [processed_result],
+                    "message": "Roboflow AI identification complete - Always verify with experts before consumption!",
+                    "method": "Roboflow AI"
+                })
+        
+        return jsonify({"error": "Roboflow inference failed"}), 500
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/kaggle-status', methods=['GET'])
 def get_kaggle_status():
     """Get the status of the Kaggle dataset and ML models"""
@@ -556,7 +701,9 @@ def get_kaggle_status():
         "features": 22,
         "safety_model_available": safety_model_available,
         "image_model_available": image_model_available,
-        "message": "Kaggle dataset ready" if safety_model_available else "Dataset available but models not loaded"
+        "roboflow_available": True,
+        "roboflow_model_id": ROBOFLOW_MODEL_ID,
+        "message": "All models ready" if safety_model_available and image_model_available else "Some models not loaded"
     })
 
 @app.route('/api/feature-codes', methods=['GET'])

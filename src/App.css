@@ -254,6 +254,11 @@
   color: var(--success-text);
 }
 
+.method-badge.method-roboflow {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
 .method-badge.method-sim {
   background: var(--warning-bg);
   color: var(--warning-text);
