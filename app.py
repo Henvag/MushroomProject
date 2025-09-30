@@ -9,6 +9,13 @@ from PIL import Image
 import io
 import base64
 import requests
+import sys
+
+# Fix Windows console encoding for emoji characters
+if sys.platform == "win32":
+    import codecs
+    sys.stdout = codecs.getwriter("utf-8")(sys.stdout.detach())
+    sys.stderr = codecs.getwriter("utf-8")(sys.stderr.detach())
 
 app = Flask(__name__)
 CORS(app)
@@ -791,4 +798,5 @@ def get_feature_codes():
 
 if __name__ == '__main__':
     init_sample_data()
-    app.run(debug=True, port=5001)
+    port = int(os.environ.get('PORT', 5001))
+    app.run(debug=False, host='0.0.0.0', port=port)

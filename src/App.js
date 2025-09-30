@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Camera, Database, Shield, Search, Filter, Sun, Moon, Brain } from 'lucide-react';
+import { Camera, Database, Shield, Search, Filter, Sun, Moon } from 'lucide-react';
 import './App.css';
 
 function App() {
@@ -17,9 +17,6 @@ function App() {
   const [identificationResults, setIdentificationResults] = useState(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [kaggleStatus, setKaggleStatus] = useState(null);
-  const [featureCodes, setFeatureCodes] = useState(null);
-  const [mlPrediction, setMlPrediction] = useState(null);
-  const [selectedFeatures, setSelectedFeatures] = useState({});
 
   console.log('State initialized:', { mushrooms, isDarkMode }); // Debug log
 
@@ -42,23 +39,91 @@ function App() {
   }, [isDarkMode]);
 
   useEffect(() => {
-    // Temporarily comment out API calls to test rendering
-    // fetchMushrooms();
-    // checkKaggleStatus();
-    // fetchFeatureCodes();
+    // Check if we're in production (GitHub Pages) or development
+    const isProduction = window.location.hostname === 'mushroomproject.app';
+    const apiBaseUrl = isProduction ? 'https://your-backend-url.railway.app' : '';
     
-    // Set some dummy data for testing
-    setMushrooms([
+    // Set up axios base URL for production
+    if (isProduction) {
+      axios.defaults.baseURL = apiBaseUrl;
+    }
+    
+    // Load sample data for demo purposes
+    const sampleMushrooms = [
       {
         id: 1,
-        name: "Test Mushroom",
-        scientific_name: "Testus mushroomus",
+        name: "Chanterelle",
+        scientific_name: "Cantharellus cibarius",
         edible: true,
         poisonous: false,
         psychedelic: false,
+        taste: "Delicate, slightly peppery with fruity apricot aroma",
+        habitat: "Forest floors, often near oak and pine trees",
+        season: "Summer to Fall",
+        confidence: 0.85,
         image_url: "/images/chanterelle.jpg"
+      },
+      {
+        id: 2,
+        name: "Death Cap",
+        scientific_name: "Amanita phalloides",
+        edible: false,
+        poisonous: true,
+        psychedelic: false,
+        taste: "DO NOT EAT - Extremely toxic",
+        habitat: "Under oak and beech trees",
+        season: "Summer to Fall",
+        confidence: 0.90,
+        image_url: "/images/death-cap.jpg"
+      },
+      {
+        id: 3,
+        name: "Fly Agaric",
+        scientific_name: "Amanita muscaria",
+        edible: false,
+        poisonous: true,
+        psychedelic: true,
+        taste: "DO NOT EAT - Contains muscimol and ibotenic acid",
+        habitat: "Under birch, pine, and spruce trees",
+        season: "Summer to Fall",
+        confidence: 0.92,
+        image_url: "/images/fly-agaric.jpg"
+      },
+      {
+        id: 4,
+        name: "Porcini",
+        scientific_name: "Boletus edulis",
+        edible: true,
+        poisonous: false,
+        psychedelic: false,
+        taste: "Rich, nutty, and meaty flavor",
+        habitat: "Coniferous and deciduous forests",
+        season: "Summer to Fall",
+        confidence: 0.88,
+        image_url: "/images/porcini.jpg"
+      },
+      {
+        id: 5,
+        name: "Morel",
+        scientific_name: "Morchella esculenta",
+        edible: true,
+        poisonous: false,
+        psychedelic: false,
+        taste: "Earthy, nutty, and meaty flavor",
+        habitat: "Forests, especially after fires",
+        season: "Spring",
+        confidence: 0.82,
+        image_url: "/images/morel.jpg"
       }
-    ]);
+    ];
+    
+    setMushrooms(sampleMushrooms);
+    
+    // Try to fetch from API if backend is available
+    if (!isProduction) {
+      fetchMushrooms();
+      checkKaggleStatus();
+    }
   }, []);
 
   useEffect(() => {
@@ -98,14 +163,6 @@ function App() {
     }
   };
 
-  const fetchFeatureCodes = async () => {
-    try {
-      const response = await axios.get('/api/feature-codes');
-      setFeatureCodes(response.data);
-    } catch (err) {
-      console.log('Feature codes fetch failed:', err);
-    }
-  };
 
   const fetchMushrooms = async () => {
     try {
@@ -150,6 +207,38 @@ function App() {
       setError('');
       setIdentificationResults(null);
       
+      // Check if we're in production (no backend available)
+      const isProduction = window.location.hostname === 'mushroomproject.app';
+      
+      if (isProduction) {
+        // Simulate identification for demo purposes
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate processing time
+        
+        const simulatedResults = {
+          matches: [
+            {
+              id: 1,
+              name: "Chanterelle",
+              scientific_name: "Cantharellus cibarius",
+              edible: true,
+              poisonous: false,
+              psychedelic: false,
+              taste: "Delicate, slightly peppery with fruity apricot aroma",
+              habitat: "Forest floors, often near oak and pine trees",
+              season: "Summer to Fall",
+              confidence: 0.85,
+              uploaded_image: URL.createObjectURL(selectedFile),
+              image_url: "/images/chanterelle.jpg"
+            }
+          ],
+          message: "Demo identification - Upload your image to see AI-powered identification!",
+          method: "Demo Mode"
+        };
+        
+        setIdentificationResults(simulatedResults);
+        return;
+      }
+      
       // Create FormData for file upload
       const formData = new FormData();
       formData.append('image', selectedFile);
@@ -182,170 +271,7 @@ function App() {
     }
   };
 
-  const handleFeatureChange = (feature, value) => {
-    setSelectedFeatures(prev => ({
-      ...prev,
-      [feature]: value
-    }));
-  };
 
-  const predictSafety = async () => {
-    if (Object.keys(selectedFeatures).length < 22) {
-      setError('Please select all 22 features for accurate prediction');
-      return;
-    }
-
-    try {
-      setLoading(true);
-      setError('');
-      setMlPrediction(null);
-
-      const response = await axios.post('/api/predict-safety', {
-        features: selectedFeatures
-      });
-
-      setMlPrediction(response.data);
-    } catch (err) {
-      if (err.response?.data?.error) {
-        setError(err.response.data.error);
-      } else {
-        setError('Failed to predict safety');
-      }
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const renderMLSafetyTab = () => (
-    <div className="card">
-      <div className="card-header">
-        <Brain size={28} className="card-icon" />
-        <div>
-          <h2>ML Safety Prediction</h2>
-          <p>Use the trained model to predict mushroom safety from features</p>
-        </div>
-      </div>
-
-      {/* ML Status */}
-      {kaggleStatus && (
-        <div className={`ml-status ${kaggleStatus.safety_model_available ? 'ml-available' : 'ml-unavailable'}`}>
-          <Brain size={20} />
-          <span>
-            {kaggleStatus.safety_model_available 
-              ? `Safety Prediction Model Active - ${kaggleStatus.total_samples} samples, ${kaggleStatus.features} features`
-              : 'Safety Prediction Model not available - Please train the model first'
-            }
-          </span>
-        </div>
-      )}
-
-      {featureCodes && (
-        <div className="feature-selection">
-          <h3>Select Mushroom Features</h3>
-          <p>Choose the characteristics of the mushroom you want to analyze:</p>
-          
-          <div className="feature-grid">
-            {Object.entries(featureCodes).map(([feature, codes]) => (
-              <div key={feature} className="feature-item">
-                <label className="feature-label">
-                  {feature.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}:
-                </label>
-                <select
-                  className="feature-select"
-                  value={selectedFeatures[feature] || ''}
-                  onChange={(e) => handleFeatureChange(feature, e.target.value)}
-                >
-                  <option value="">Select...</option>
-                  {Object.entries(codes).map(([code, description]) => (
-                    <option key={code} value={code}>
-                      {code} - {description}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ))}
-          </div>
-
-          <div className="feature-actions">
-            <button 
-              className="btn btn-primary" 
-              onClick={predictSafety}
-              disabled={Object.keys(selectedFeatures).length < 22 || loading}
-            >
-              {loading ? 'Predicting...' : 'Predict Safety'}
-            </button>
-            
-            <button 
-              className="btn btn-secondary" 
-              onClick={() => setSelectedFeatures({})}
-            >
-              Clear All
-            </button>
-          </div>
-
-          <div className="feature-progress">
-            <div className="progress-bar">
-              <div 
-                className="progress-fill" 
-                style={{ width: `${(Object.keys(selectedFeatures).length / 22) * 100}%` }}
-              ></div>
-            </div>
-            <span className="progress-text">
-              {Object.keys(selectedFeatures).length} / 22 features selected
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* ML Prediction Results */}
-      {mlPrediction && (
-        <div className="ml-results">
-          <div className="results-header">
-            <h3>ML Safety Prediction Results</h3>
-            <div className={`safety-badge ${mlPrediction.safety === 'edible' ? 'safety-edible' : 'safety-poisonous'}`}>
-              {mlPrediction.safety === 'edible' ? '✅ EDIBLE' : '☠️ POISONOUS'}
-            </div>
-          </div>
-
-          <div className="prediction-details">
-            <div className="confidence-section">
-              <div className="confidence-label">
-                <strong>Confidence:</strong> {Math.round(mlPrediction.confidence * 100)}%
-              </div>
-              <div className="confidence-bar">
-                <div 
-                  className="confidence-fill" 
-                  style={{ width: `${mlPrediction.confidence * 100}%` }}
-                ></div>
-              </div>
-            </div>
-
-            <div className="probabilities">
-              <h4>Class Probabilities:</h4>
-              <div className="probability-grid">
-                {Object.entries(mlPrediction.probabilities).map(([class_name, prob]) => (
-                  <div key={class_name} className="probability-item">
-                    <span className="class-name">
-                      {class_name === 'e' ? 'Edible' : 'Poisonous'}:
-                    </span>
-                    <span className="probability-value">
-                      {Math.round(prob * 100)}%
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="safety-warning">
-              <strong>⚠️ Safety Warning:</strong>
-              <p>{mlPrediction.warning}</p>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
 
   const renderIdentificationTab = () => (
     <div className="card">
@@ -413,8 +339,8 @@ function App() {
               identificationResults.method === 'Local ML Model' ? 'method-ml' : 
               'method-sim'
             }`}>
-              {identificationResults.method === 'Roboflow AI' ? <Brain size={16} /> :
-               identificationResults.method === 'Local ML Model' ? <Brain size={16} /> : 
+              {identificationResults.method === 'Roboflow AI' ? <Database size={16} /> :
+               identificationResults.method === 'Local ML Model' ? <Database size={16} /> : 
                <Database size={16} />}
               {identificationResults.method}
             </div>
@@ -631,12 +557,6 @@ function App() {
             <Camera size={20} /> Identify
           </button>
           <button 
-            className={`nav-link ${activeTab === 'ml-safety' ? 'active' : ''}`}
-            onClick={() => setActiveTab('ml-safety')}
-          >
-            <Brain size={20} /> ML Safety
-          </button>
-          <button 
             className={`nav-link ${activeTab === 'browse' ? 'active' : ''}`}
             onClick={() => setActiveTab('browse')}
           >
@@ -647,7 +567,6 @@ function App() {
         {error && <div className="error">{error}</div>}
 
         {activeTab === 'identify' && renderIdentificationTab()}
-        {activeTab === 'ml-safety' && renderMLSafetyTab()}
         {activeTab === 'browse' && renderBrowseTab()}
       </div>
     </div>
