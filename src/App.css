@@ -786,11 +786,6 @@
   color: var(--danger-text);
 }
 
-.property-psychedelic {
-  background: var(--warning-bg);
-  color: var(--warning-text);
-}
-
 .mushroom-details {
   margin-bottom: 20px;
 }

@@ -56,7 +56,6 @@ function App() {
         scientific_name: "Cantharellus cibarius",
         edible: true,
         poisonous: false,
-        psychedelic: false,
         taste: "Delicate, slightly peppery with fruity apricot aroma",
         habitat: "Forest floors, often near oak and pine trees",
         season: "Summer to Fall",
@@ -69,7 +68,6 @@ function App() {
         scientific_name: "Amanita phalloides",
         edible: false,
         poisonous: true,
-        psychedelic: false,
         taste: "DO NOT EAT - Extremely toxic",
         habitat: "Under oak and beech trees",
         season: "Summer to Fall",
@@ -82,7 +80,6 @@ function App() {
         scientific_name: "Amanita muscaria",
         edible: false,
         poisonous: true,
-        psychedelic: true,
         taste: "DO NOT EAT - Contains muscimol and ibotenic acid",
         habitat: "Under birch, pine, and spruce trees",
         season: "Summer to Fall",
@@ -95,7 +92,6 @@ function App() {
         scientific_name: "Boletus edulis",
         edible: true,
         poisonous: false,
-        psychedelic: false,
         taste: "Rich, nutty, and meaty flavor",
         habitat: "Coniferous and deciduous forests",
         season: "Summer to Fall",
@@ -126,14 +122,6 @@ function App() {
     }
   }, []);
 
-  useEffect(() => {
-    filterMushrooms();
-  }, [mushrooms, searchQuery, activeFilter]);
-
-  const toggleDarkMode = () => {
-    setIsDarkMode(!isDarkMode);
-  };
-
   const filterMushrooms = useCallback(() => {
     let filtered = mushrooms;
 
@@ -152,6 +140,14 @@ function App() {
 
     setFilteredMushrooms(filtered);
   }, [mushrooms, searchQuery, activeFilter]);
+
+  useEffect(() => {
+    filterMushrooms();
+  }, [filterMushrooms]);
+
+  const toggleDarkMode = () => {
+    setIsDarkMode(!isDarkMode);
+  };
 
   const checkKaggleStatus = async () => {
     try {
@@ -222,7 +218,6 @@ function App() {
               scientific_name: "Cantharellus cibarius",
               edible: true,
               poisonous: false,
-              psychedelic: false,
               taste: "Delicate, slightly peppery with fruity apricot aroma",
               habitat: "Forest floors, often near oak and pine trees",
               season: "Summer to Fall",
@@ -249,6 +244,10 @@ function App() {
           'Content-Type': 'multipart/form-data',
         },
       });
+      
+      console.log('🔍 Identification response:', response.data);
+      console.log('📊 Response method:', response.data.method);
+      console.log('📦 Response matches:', response.data.matches);
       
       setIdentificationResults(response.data);
     } catch (err) {
@@ -279,7 +278,7 @@ function App() {
         <Camera size={28} className="card-icon" />
         <div>
           <h2>Identify Mushroom</h2>
-          <p>Upload a photo to identify mushrooms (simulation mode)</p>
+          <p>Upload a photo to identify mushrooms using AI</p>
         </div>
       </div>
 
@@ -335,11 +334,11 @@ function App() {
           <div className="results-header">
             <h3>Identification Results</h3>
             <div className={`method-badge ${
-              identificationResults.method === 'Roboflow AI' ? 'method-roboflow' :
+              identificationResults.method === 'Roboflow AI' || identificationResults.method === 'Roboflow Workflow AI' ? 'method-roboflow' :
               identificationResults.method === 'Local ML Model' ? 'method-ml' : 
               'method-sim'
             }`}>
-              {identificationResults.method === 'Roboflow AI' ? <Database size={16} /> :
+              {(identificationResults.method === 'Roboflow AI' || identificationResults.method === 'Roboflow Workflow AI') ? <Database size={16} /> :
                identificationResults.method === 'Local ML Model' ? <Database size={16} /> : 
                <Database size={16} />}
               {identificationResults.method}
@@ -370,7 +369,6 @@ function App() {
                   <div className="mushroom-properties">
                     {mushroom.edible && <span className="property-badge property-edible">Edible</span>}
                     {mushroom.poisonous && <span className="property-badge property-poisonous">Poisonous</span>}
-                    {mushroom.psychedelic && <span className="property-badge property-psychedelic">Psychedelic</span>}
                   </div>
 
                   <div className="confidence-section">
@@ -457,12 +455,6 @@ function App() {
           >
             Poisonous
           </button>
-          <button 
-            className={`filter-btn ${activeFilter === 'psychedelic' ? 'active' : ''}`}
-            onClick={() => setActiveFilter('psychedelic')}
-          >
-            Psychedelic
-          </button>
         </div>
       </div>
 
@@ -493,7 +485,6 @@ function App() {
                 <div className="mushroom-properties">
                   {mushroom.edible && <span className="property-badge property-edible">Edible</span>}
                   {mushroom.poisonous && <span className="property-badge property-poisonous">Poisonous</span>}
-                  {mushroom.psychedelic && <span className="property-badge property-psychedelic">Psychedelic</span>}
                 </div>
 
                 <div className="mushroom-details">
@@ -536,7 +527,7 @@ function App() {
         <div className="header">
           <div className="header-content">
             <h1>🍄 Mushroom Project Prototype</h1>
-            <p>Identify edible, poisonous, and psychedelic mushrooms safely</p>
+            <p>Classify edible and poisonous mushrooms safely (kinda)</p>
           </div>
           <div className="theme-toggle">
             <button 

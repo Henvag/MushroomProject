@@ -17,7 +17,6 @@ class TestEssentialFunctions:
                 "scientific_name": "Testus mushroomus",
                 "edible": True,
                 "poisonous": False,
-                "psychedelic": False,
                 "taste": "Test taste",
                 "habitat": "Test habitat",
                 "season": "Test season",
@@ -58,26 +57,17 @@ class TestEssentialFunctions:
         chanterelle_safety = get_safety_info_for_class('chanterelle')
         assert chanterelle_safety['edible'] == True
         assert chanterelle_safety['poisonous'] == False
-        assert chanterelle_safety['psychedelic'] == False
         assert 'safe' in chanterelle_safety['warning'].lower()
         
         # Test poisonous mushroom classification
         death_cap_safety = get_safety_info_for_class('death_cap')
         assert death_cap_safety['edible'] == False
         assert death_cap_safety['poisonous'] == True
-        assert death_cap_safety['psychedelic'] == False
         assert 'deadly' in death_cap_safety['warning'].lower()
         
-        # Test psychedelic mushroom classification
-        psilocybe_safety = get_safety_info_for_class('psilocybe')
-        assert psilocybe_safety['edible'] == False
-        assert psilocybe_safety['poisonous'] == False
-        assert psilocybe_safety['psychedelic'] == True
-        assert 'psychoactive' in psilocybe_safety['warning'].lower()
         
         # Test unknown mushroom classification
         unknown_safety = get_safety_info_for_class('unknown_mushroom')
         assert unknown_safety['edible'] == False
         assert unknown_safety['poisonous'] == False
-        assert unknown_safety['psychedelic'] == False
         assert 'unknown' in unknown_safety['warning'].lower()

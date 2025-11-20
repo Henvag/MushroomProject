@@ -7,7 +7,7 @@ A web application for identifying and learning about mushrooms, with a focus on 
 - **Mushroom Database**: Browse 8 different mushroom species with detailed information
 - **Safety Checking**: Verify if mushrooms are safe to consume
 - **Identification Simulation**: Upload images for simulated mushroom identification
-- **Filtering & Search**: Find mushrooms by properties (edible, poisonous, psychedelic)
+- **Filtering & Search**: Find mushrooms by properties (edible, poisonous)
 - **Dark Mode**: Beautiful dark/light theme toggle
 - **Responsive Design**: Works on desktop and mobile devices
 
@@ -86,8 +86,8 @@ npm start
 
 1. **Chanterelle** - Edible, delicious
 2. **Death Cap** - Extremely poisonous
-3. **Fly Agaric** - Poisonous, psychedelic
-4. **Psilocybe Cubensis** - Psychedelic
+3. **Fly Agaric** - Poisonous
+4. **Psilocybe Cubensis** - Not recommended for consumption
 5. **Porcini** - Edible, gourmet
 6. **Destroying Angel** - Extremely poisonous
 7. **Morel** - Edible, prized
@@ -98,7 +98,6 @@ npm start
 ### **Safety First**
 - Clear warnings for poisonous mushrooms
 - Detailed safety information
-- Psychedelic mushroom identification
 
 ### **User Experience**
 - Beautiful, modern interface
@@ -133,7 +132,7 @@ npm start
 1. **Train ML model** on Kaggle dataset for safety prediction
 2. **Add more mushroom species** to the database
 3. **Implement real image identification** with trained model
-4. **Expand psychedelic mushroom coverage**
+4. **Expand mushroom species coverage**
 
 ## 🤝 Contributing
 

@@ -3,13 +3,21 @@ from flask_cors import CORS
 import json
 import os
 import random
-import joblib
-import pandas as pd
 from PIL import Image
 import io
 import base64
 import requests
 import sys
+import logging
+
+# Configure logging to show all output immediately
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    force=True
+)
+# Force stdout to be unbuffered
+sys.stdout.reconfigure(line_buffering=True) if hasattr(sys.stdout, 'reconfigure') else None
 
 # Fix Windows console encoding for emoji characters
 if sys.platform == "win32":
@@ -20,10 +28,20 @@ if sys.platform == "win32":
 app = Flask(__name__)
 CORS(app)
 
-# Roboflow configuration
-ROBOFLOW_API_URL = "https://detect.roboflow.com"
+# Enable Flask debug logging
+app.logger.setLevel(logging.DEBUG)
+logging.getLogger('werkzeug').setLevel(logging.DEBUG)
+
+# Roboflow configuration - Using Workflow API
+ROBOFLOW_WORKFLOW_API_URL = "https://serverless.roboflow.com"
 ROBOFLOW_API_KEY = "n2XmYmT5JN31JxXN6T14"  # Private API key
-ROBOFLOW_MODEL_ID = "mushroom-nzafz/1"
+ROBOFLOW_WORKSPACE = "mushroommodel"  # Workspace name from workflow URL
+ROBOFLOW_WORKFLOW_ID = "custom-workflow-2"  # Workflow ID from Unique URL
+# Workflow parameters (matching the workflow configuration from schema)
+# Note: Field name is "iOU" (capital I, capital O, capital U) - case sensitive!
+ROBOFLOW_IOU = 0.5
+ROBOFLOW_MAX_DETECTIONS = 50
+ROBOFLOW_CONFIDENCE = 0.4
 
 # Load mushroom database
 def load_mushroom_data():
@@ -37,77 +55,6 @@ def save_mushroom_data(data):
     with open('mushroom_data.json', 'w') as f:
         json.dump(data, f, indent=2)
 
-# Load ML models if available
-def load_ml_models():
-    """Load both safety prediction and image classification models"""
-    models = {}
-    
-    # Load safety prediction model
-    try:
-        safety_model_path = 'models/mushroom_safety_model.pkl'
-        encoders_path = 'models/label_encoders.pkl'
-        target_encoder_path = 'models/target_encoder.pkl'
-        
-        if all(os.path.exists(p) for p in [safety_model_path, encoders_path, target_encoder_path]):
-            models['safety_model'] = joblib.load(safety_model_path)
-            models['label_encoders'] = joblib.load(encoders_path)
-            models['target_encoder'] = joblib.load(target_encoder_path)
-            print("✅ Safety prediction model loaded successfully!")
-        else:
-            print("⚠️  Safety prediction model files not found")
-            models['safety_model'] = None
-    except Exception as e:
-        print(f"❌ Error loading safety model: {e}")
-        models['safety_model'] = None
-    
-    # Load image classification model
-    try:
-        image_model_path = 'models/mushroom_image_classifier.pth'
-        class_mapping_path = 'models/class_mapping.json'
-        
-        if all(os.path.exists(p) for p in [image_model_path, class_mapping_path]):
-            # Import PyTorch here to avoid import errors if not installed
-            import torch
-            import torch.nn as nn
-            from torchvision import transforms, models as torch_models
-            
-            # Load class mapping
-            with open(class_mapping_path, 'r') as f:
-                models['class_mapping'] = json.load(f)
-            
-            # Create model architecture (must match exactly what was trained)
-            model = torch_models.resnet50(pretrained=False)
-            in_features = model.fc.in_features
-            model.fc = nn.Sequential(
-                nn.Dropout(0.5),
-                nn.Linear(in_features, 1024),
-                nn.ReLU(),
-                nn.Dropout(0.3),
-                nn.Linear(1024, 512),
-                nn.ReLU(),
-                nn.Dropout(0.2),
-                nn.Linear(512, models['class_mapping']['num_classes'])
-            )
-            
-            # Load trained weights
-            model.load_state_dict(torch.load(image_model_path, map_location='cpu'))
-            model.eval()
-            models['image_model'] = model
-            models['image_transform'] = transforms.Compose([
-                transforms.Resize(256),
-                transforms.CenterCrop(224),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-            ])
-            print("✅ Image classification model loaded successfully!")
-        else:
-            print("⚠️  Image classification model files not found")
-            models['image_model'] = None
-    except Exception as e:
-        print(f"❌ Error loading image classification model: {e}")
-        models['image_model'] = None
-    
-    return models
 
 # Initialize with sample data if empty
 def init_sample_data():
@@ -120,7 +67,6 @@ def init_sample_data():
                 "scientific_name": "Cantharellus cibarius",
                 "edible": True,
                 "poisonous": False,
-                "psychedelic": False,
                 "taste": "Delicate, slightly peppery with fruity apricot aroma",
                 "habitat": "Forest floors, often near oak and pine trees",
                 "season": "Summer to Fall",
@@ -133,7 +79,6 @@ def init_sample_data():
                 "scientific_name": "Amanita phalloides",
                 "edible": False,
                 "poisonous": True,
-                "psychedelic": False,
                 "taste": "DO NOT EAT - Extremely toxic",
                 "habitat": "Under oak and beech trees",
                 "season": "Summer to Fall",
@@ -146,7 +91,6 @@ def init_sample_data():
                 "scientific_name": "Amanita muscaria",
                 "edible": False,
                 "poisonous": True,
-                "psychedelic": True,
                 "taste": "DO NOT EAT - Contains muscimol and ibotenic acid",
                 "habitat": "Under birch, pine, and spruce trees",
                 "season": "Summer to Fall",
@@ -159,7 +103,6 @@ def init_sample_data():
                 "scientific_name": "Psilocybe cubensis",
                 "edible": False,
                 "poisonous": False,
-                "psychedelic": True,
                 "taste": "Not recommended for consumption",
                 "habitat": "Grasslands, pastures, cow dung",
                 "season": "Spring to Fall",
@@ -172,7 +115,6 @@ def init_sample_data():
                 "scientific_name": "Boletus edulis",
                 "edible": True,
                 "poisonous": False,
-                "psychedelic": False,
                 "taste": "Rich, nutty, and meaty flavor",
                 "habitat": "Coniferous and deciduous forests",
                 "season": "Summer to Fall",
@@ -185,7 +127,6 @@ def init_sample_data():
                 "scientific_name": "Amanita bisporigera",
                 "edible": False,
                 "poisonous": True,
-                "psychedelic": False,
                 "taste": "DO NOT EAT - Extremely deadly",
                 "habitat": "Forests, often near oak trees",
                 "season": "Summer to Fall",
@@ -198,7 +139,6 @@ def init_sample_data():
                 "scientific_name": "Morchella esculenta",
                 "edible": True,
                 "poisonous": False,
-                "psychedelic": False,
                 "taste": "Earthy, nutty, and meaty flavor",
                 "habitat": "Forests, especially after fires",
                 "season": "Spring",
@@ -211,7 +151,6 @@ def init_sample_data():
                 "scientific_name": "Gyromitra esculenta",
                 "edible": False,
                 "poisonous": True,
-                "psychedelic": False,
                 "taste": "DO NOT EAT - Contains gyromitrin toxin",
                 "habitat": "Coniferous forests",
                 "season": "Spring",
@@ -221,8 +160,6 @@ def init_sample_data():
         ]
         save_mushroom_data(sample_mushrooms)
 
-# Load the ML models on startup
-ml_models = load_ml_models()
 
 @app.route('/api/mushrooms', methods=['GET'])
 def get_mushrooms():
@@ -232,14 +169,11 @@ def get_mushrooms():
     # Filter parameters
     edible = request.args.get('edible')
     poisonous = request.args.get('poisonous')
-    psychedelic = request.args.get('psychedelic')
     
     if edible is not None:
         mushrooms = [m for m in mushrooms if m['edible'] == (edible.lower() == 'true')]
     if poisonous is not None:
         mushrooms = [m for m in mushrooms if m['poisonous'] == (poisonous.lower() == 'true')]
-    if psychedelic is not None:
-        mushrooms = [m for m in mushrooms if m['psychedelic'] == (psychedelic.lower() == 'true')]
     
     return jsonify(mushrooms)
 
@@ -256,98 +190,64 @@ def get_mushroom(mushroom_id):
 
 @app.route('/api/identify', methods=['POST'])
 def identify_mushroom():
-    """Identify mushroom from uploaded image using ML model"""
+    """Identify mushroom from uploaded image using Roboflow API"""
     try:
+        app.logger.info("=" * 60)
+        app.logger.info("🔵 IDENTIFY REQUEST RECEIVED")
+        app.logger.info("=" * 60)
+        sys.stdout.flush()  # Force flush
+        
         if 'image' not in request.files:
+            app.logger.error("❌ No image file in request")
             return jsonify({"error": "No image file provided"}), 400
         
         image_file = request.files['image']
+        app.logger.info(f"✅ Image file received: {image_file.filename}")
         image = Image.open(image_file.stream).convert('RGB')
+        app.logger.info(f"✅ Image opened: {image.size[0]}x{image.size[1]}")
+        sys.stdout.flush()
         
-        # Try Roboflow inference first
+        # Use Roboflow workflow inference
+        app.logger.info("🚀 Calling roboflow_inference()...")
+        sys.stdout.flush()
         roboflow_result = roboflow_inference(image_file)
+        
         if roboflow_result:
+            app.logger.info(f"✅ Roboflow result received: {type(roboflow_result)}")
+            sys.stdout.flush()
             processed_result = process_roboflow_result(roboflow_result, image)
+            
             if processed_result:
+                # Use the method from processed result (e.g., "Roboflow Workflow AI")
+                method = processed_result.get('method', 'Roboflow Workflow AI')
+                app.logger.info(f"✅ Returning processed result: method={method}, class={processed_result.get('ml_class')}, confidence={processed_result.get('confidence')}")
+                app.logger.info("=" * 60)
+                sys.stdout.flush()
                 return jsonify({
                     "matches": [processed_result],
-                    "message": "Roboflow AI identification complete - Always verify with experts before consumption!",
-                    "method": "Roboflow AI"
+                    "message": "Roboflow workflow identification complete - Always verify with experts before consumption!",
+                    "method": method
                 })
-        
-        # Fall back to local ML model if Roboflow fails
-        if ml_models.get('image_model') and ml_models.get('class_mapping'):
-            try:
-                # Process the image with the ML model
-                image_tensor = ml_models['image_transform'](image).unsqueeze(0)
-                
-                # Make prediction
-                import torch
-                with torch.no_grad():
-                    outputs = ml_models['image_model'](image_tensor)
-                    probabilities = torch.softmax(outputs, dim=1)
-                    top_probs, top_indices = torch.topk(probabilities, 3)
-                
-                # Format results
-                results = []
-                for i in range(3):
-                    class_idx = top_indices[0][i].item()
-                    class_name = ml_models['class_mapping']['classes'][class_idx]
-                    confidence = top_probs[0][i].item()
-                    
-                    # Get safety information
-                    safety_info = get_safety_info_for_class(class_name)
-                    
-                    # Find matching mushroom in database
-                    mushroom_data = find_mushroom_by_class(class_name)
-                    
-                    # Convert uploaded image to base64 for display
-                    import base64
-                    image_buffer = io.BytesIO()
-                    image.save(image_buffer, format='PNG')
-                    image_base64 = base64.b64encode(image_buffer.getvalue()).decode('utf-8')
-                    uploaded_image_data = f"data:image/png;base64,{image_base64}"
-                    
-                    if mushroom_data:
-                        result = {
-                            **mushroom_data,
-                            'confidence': confidence,
-                            'ml_class': class_name,
-                            'uploaded_image': uploaded_image_data
-                        }
-                    else:
-                        result = {
-                            'id': i + 1,
-                            'name': class_name.replace('_', ' ').title(),
-                            'scientific_name': f"Unknown {class_name}",
-                            'edible': safety_info['edible'],
-                            'poisonous': safety_info['poisonous'],
-                            'psychedelic': safety_info['psychedelic'],
-                            'taste': safety_info['warning'],
-                            'habitat': 'Unknown',
-                            'season': 'Unknown',
-                            'confidence': confidence,
-                            'uploaded_image': uploaded_image_data,
-                            'ml_class': class_name
-                        }
-                    
-                    results.append(result)
-                
-                return jsonify({
-                    "matches": results,
-                    "message": "Local ML image identification complete - Always verify with experts before consumption!",
-                    "method": "Local ML Model"
-                })
-                
-            except Exception as e:
-                print(f"Local ML image classification failed: {e}")
-                # Fall back to simulation
-                return simulate_identification()
+            else:
+                app.logger.error("❌ process_roboflow_result returned None")
         else:
-            # Fall back to simulation if ML model not available
-            return simulate_identification()
+            app.logger.error("❌ roboflow_inference returned None")
+        
+        # Fall back to simulation if Roboflow fails
+        app.logger.warning("⚠️ Roboflow workflow failed, falling back to simulation mode")
+        if roboflow_result:
+            app.logger.info(f"📋 Roboflow result was: {json.dumps(roboflow_result, indent=2)[:1000]}")
+        else:
+            app.logger.info("📋 Roboflow result was None - API call likely failed")
+        app.logger.info("=" * 60)
+        sys.stdout.flush()
+        return simulate_identification()
         
     except Exception as e:
+        app.logger.error(f"❌ EXCEPTION in identify_mushroom: {e}")
+        import traceback
+        app.logger.error(traceback.format_exc())
+        sys.stdout.flush()
         return jsonify({"error": str(e)}), 500
 
 def simulate_identification():
@@ -412,137 +312,306 @@ def simulate_identification():
         "method": "Simulation"
     })
 
-def get_safety_info_for_class(class_name):
-    """Get safety information for a mushroom class"""
-    safety_map = {
-        'chanterelle': {'safety': 'edible', 'edible': True, 'poisonous': False, 'psychedelic': False, 'warning': '✅ Generally safe to eat when properly identified'},
-        'porcini': {'safety': 'edible', 'edible': True, 'poisonous': False, 'psychedelic': False, 'warning': '✅ Generally safe to eat when properly identified'},
-        'morel': {'safety': 'edible', 'edible': True, 'poisonous': False, 'psychedelic': False, 'warning': '✅ Generally safe to eat when properly identified'},
-        'death_cap': {'safety': 'poisonous', 'edible': False, 'poisonous': True, 'psychedelic': False, 'warning': '☠️ EXTREMELY DEADLY - Causes liver failure and death!'},
-        'fly_agaric': {'safety': 'poisonous', 'edible': False, 'poisonous': True, 'psychedelic': True, 'warning': '☠️ EXTREMELY DANGEROUS - Contains toxic compounds!'},
-        'false_morel': {'safety': 'poisonous', 'edible': False, 'poisonous': True, 'psychedelic': False, 'warning': '☠️ EXTREMELY DANGEROUS - Contains gyromitrin toxin!'},
-        'destroying_angel': {'safety': 'poisonous', 'edible': False, 'poisonous': True, 'psychedelic': False, 'warning': '☠️ EXTREMELY DEADLY - Causes organ failure!'},
-        'psilocybe': {'safety': 'psychedelic', 'edible': False, 'poisonous': False, 'psychedelic': True, 'warning': '⚠️ PSYCHOACTIVE - Contains hallucinogenic compounds!'}
-    }
-    
-    return safety_map.get(class_name, {'safety': 'unknown', 'edible': False, 'poisonous': False, 'psychedelic': False, 'warning': '❓ Unknown edibility'})
-
-def find_mushroom_by_class(class_name):
-    """Find mushroom data by ML class name"""
-    mushrooms = load_mushroom_data()
-    
-    # Map ML class names to database names
-    class_mapping = {
-        'chanterelle': 'Chanterelle',
-        'death_cap': 'Death Cap',
-        'fly_agaric': 'Fly Agaric',
-        'porcini': 'Porcini',
-        'morel': 'Morel',
-        'false_morel': 'False Morel',
-        'destroying_angel': 'Destroying Angel',
-        'psilocybe': 'Psilocybe Cubensis'
-    }
-    
-    database_name = class_mapping.get(class_name)
-    if database_name:
-        return next((m for m in mushrooms if m['name'] == database_name), None)
-    
-    return None
 
 def roboflow_inference(image_file):
-    """Perform inference using Roboflow cloud API"""
+    """Perform inference using Roboflow Workflow API"""
     try:
-        print("🍄 Starting Roboflow inference...")
+        app.logger.info("🍄 Starting Roboflow workflow inference...")
+        app.logger.info(f"📋 API Key: {ROBOFLOW_API_KEY[:10]}...")
+        app.logger.info(f"📋 Workspace: {ROBOFLOW_WORKSPACE}")
+        app.logger.info(f"📋 Workflow ID: {ROBOFLOW_WORKFLOW_ID}")
+        sys.stdout.flush()
         
-        # Save the uploaded image temporarily
+        # Ensure file pointer is at start, then save the uploaded image temporarily
+        try:
+            image_file.stream.seek(0)
+        except Exception:
+            pass
         temp_image_path = 'temp_upload.jpg'
         image_file.save(temp_image_path)
-        print(f"📁 Image saved to {temp_image_path}")
+        file_size = os.path.getsize(temp_image_path)
+        app.logger.info(f"📁 Image saved to {temp_image_path} ({file_size} bytes)")
+        sys.stdout.flush()
         
-        # Make API request to Roboflow
-        url = f"{ROBOFLOW_API_URL}/{ROBOFLOW_MODEL_ID}"
-        headers = {
-            "Authorization": f"Bearer {ROBOFLOW_API_KEY}"
+        # Build workflow API URL
+        # Roboflow workflows use: https://serverless.roboflow.com/{workspace}/workflows/{workflow_id}
+        workflow_url = f"{ROBOFLOW_WORKFLOW_API_URL}/{ROBOFLOW_WORKSPACE}/workflows/{ROBOFLOW_WORKFLOW_ID}"
+        
+        app.logger.info(f"🌐 Calling Roboflow workflow API: {workflow_url}")
+        sys.stdout.flush()
+        
+        # Read image file and convert to base64
+        try:
+            with open(temp_image_path, 'rb') as img_file:
+                image_data = img_file.read()
+                # Encode image to base64
+                image_base64 = base64.b64encode(image_data).decode('utf-8')
+        except Exception as e:
+            app.logger.error(f"❌ Error reading image file: {e}")
+            if os.path.exists(temp_image_path):
+                os.remove(temp_image_path)
+            sys.stdout.flush()
+            return None
+        
+        # Prepare request payload
+        # Workflow API expects JSON with api_key and inputs object
+        # Based on workflow schema:
+        # - "iOU" (case-sensitive! capital I, O, U)
+        # - "max_detections"
+        # - "confidence"
+        # - "image" (InferenceImage type - base64 encoded string)
+        inputs = {
+            'image': image_base64,
+            'iOU': ROBOFLOW_IOU,  # Note: Case-sensitive field name!
+            'max_detections': ROBOFLOW_MAX_DETECTIONS,
+            'confidence': ROBOFLOW_CONFIDENCE
         }
         
-        print(f"🌐 Making API request to: {url}")
-        
-        # Read the image file and send to API with timeout
-        with open(temp_image_path, 'rb') as f:
-            files = {'file': f}
-            response = requests.post(url, headers=headers, files=files, timeout=10)
+        # Prepare payload with api_key and inputs
+        try:
+            payload = {
+                'api_key': ROBOFLOW_API_KEY,
+                'inputs': inputs
+            }
+            app.logger.info(f"📊 Sending request with workflow parameters:")
+            app.logger.info(f"   - image: base64 encoded ({len(image_base64)} chars)")
+            app.logger.info(f"   - iOU: {ROBOFLOW_IOU} (note: case-sensitive field name)")
+            app.logger.info(f"   - max_detections: {ROBOFLOW_MAX_DETECTIONS}")
+            app.logger.info(f"   - confidence: {ROBOFLOW_CONFIDENCE}")
+            sys.stdout.flush()
             
-        print(f"📡 API response status: {response.status_code}")
+            response = requests.post(
+                workflow_url,
+                json=payload,
+                headers={'Content-Type': 'application/json'},
+                timeout=30
+            )
+            
+            # Log response for debugging
+            app.logger.info(f"📡 Response status: {response.status_code}")
+            if response.status_code != 200:
+                app.logger.warning(f"⚠️ Request failed with status {response.status_code}")
+                app.logger.warning(f"📋 Error response: {response.text[:1000]}")
+            sys.stdout.flush()
+            
+            last_error = None
+            if response.status_code != 200:
+                last_error = f"Status {response.status_code}: {response.text[:500]}"
+                
+        except Exception as e:
+            last_error = str(e)
+            app.logger.error(f"❌ Error calling workflow API: {e}")
+            import traceback
+            app.logger.error(traceback.format_exc())
+            response = None
+            sys.stdout.flush()
         
         # Clean up temporary file
         if os.path.exists(temp_image_path):
             os.remove(temp_image_path)
-            print("🗑️ Temporary file cleaned up")
+            app.logger.info("🗑️ Temporary file cleaned up")
         
-        if response.status_code == 200:
-            result = response.json()
-            print("✅ Roboflow inference successful!")
-            return result
+        if response and response.status_code == 200:
+            try:
+                result = response.json()
+                app.logger.info("✅ Roboflow workflow inference successful!")
+                app.logger.info(f"📋 Response type: {type(result)}")
+                if isinstance(result, list):
+                    app.logger.info(f"📋 Response is an array with {len(result)} item(s)")
+                    if len(result) > 0:
+                        app.logger.info(f"📋 First item keys: {list(result[0].keys()) if isinstance(result[0], dict) else 'Not a dict'}")
+                elif isinstance(result, dict):
+                    app.logger.info(f"📋 Response keys: {list(result.keys())}")
+                else:
+                    app.logger.info(f"📋 Response: {result}")
+                app.logger.info(f"📋 Full response (first 2000 chars): {json.dumps(result, indent=2)[:2000]}")
+                sys.stdout.flush()
+                return result
+            except Exception as e:
+                app.logger.error(f"❌ Error parsing JSON response: {e}")
+                app.logger.error(f"📋 Response status: {response.status_code}")
+                app.logger.error(f"📋 Response text (first 1000 chars): {response.text[:1000]}")
+                import traceback
+                app.logger.error(traceback.format_exc())
+                sys.stdout.flush()
+                return None
         else:
-            print(f"❌ Roboflow API error: {response.status_code} - {response.text}")
+            error_msg = last_error or (f"Status {response.status_code}: {response.text[:500]}" if response else "No response")
+            app.logger.error(f"❌ Roboflow workflow API error: {error_msg}")
+            if response:
+                app.logger.error(f"📋 Full error response: {response.text[:2000]}")
+            app.logger.error("💡 Tip: Check that the workflow ID, workspace, and API key are correct")
+            sys.stdout.flush()
             return None
             
     except requests.exceptions.Timeout:
-        print("⏰ Roboflow API timeout - request took too long")
+        app.logger.error("⏰ Roboflow API timeout - request took too long")
+        sys.stdout.flush()
         return None
     except requests.exceptions.ConnectionError:
-        print("🔌 Roboflow API connection error - check internet connection")
+        app.logger.error("🔌 Roboflow API connection error - check internet connection")
+        sys.stdout.flush()
         return None
     except Exception as e:
-        print(f"❌ Roboflow inference error: {e}")
+        app.logger.error(f"❌ Roboflow inference error: {e}")
+        import traceback
+        app.logger.error(traceback.format_exc())
+        sys.stdout.flush()
         return None
 
 def process_roboflow_result(roboflow_result, uploaded_image):
-    """Process Roboflow inference result and format for API response"""
-    if not roboflow_result or 'predictions' not in roboflow_result:
+    """Process Roboflow Workflow inference result and format for API response"""
+    try:
+        app.logger.info(f"🔍 Processing Roboflow result...")
+        app.logger.info(f"📋 Result type: {type(roboflow_result)}")
+        sys.stdout.flush()
+        
+        # Convert uploaded image to base64 for display
+        image_buffer = io.BytesIO()
+        uploaded_image.save(image_buffer, format='PNG')
+        image_base64 = base64.b64encode(image_buffer.getvalue()).decode('utf-8')
+        uploaded_image_data = f"data:image/png;base64,{image_base64}"
+        
+        # Handle workflow output format
+        # Workflow returns: [{"output3": 0.5, "output2": 50, "output": 0.4, "predictions": {...}}]
+        # Where predictions.predictions contains edible/poisonous with confidence scores
+        predictions_data = None
+        predicted_classes = None
+        class_confidences = {}
+        
+        # Check if result is an array (workflow format)
+        workflow_item = None
+        if isinstance(roboflow_result, list) and len(roboflow_result) > 0:
+            workflow_item = roboflow_result[0]
+            app.logger.info(f"📋 Result is an array, using first item")
+            app.logger.info(f"📋 First item keys: {list(workflow_item.keys()) if isinstance(workflow_item, dict) else 'Not a dict'}")
+        elif isinstance(roboflow_result, dict):
+            workflow_item = roboflow_result
+            app.logger.info(f"📋 Result is a dict")
+            app.logger.info(f"📋 Dict keys: {list(workflow_item.keys())}")
+        else:
+            app.logger.error(f"❌ Unexpected result type: {type(roboflow_result)}")
+            sys.stdout.flush()
+            return None
+        
+        # Extract predictions from workflow item
+        if isinstance(workflow_item, dict) and 'predictions' in workflow_item:
+            pred_obj = workflow_item['predictions']
+            app.logger.info(f"📋 Found 'predictions' key, type: {type(pred_obj)}")
+            
+            # Handle nested predictions structure
+            # Format: {"predictions": {"predictions": {"edible": {...}, "poisonous": {...}}, "predicted_classes": [...]}}
+            if isinstance(pred_obj, dict):
+                app.logger.info(f"📋 predictions is a dict, keys: {list(pred_obj.keys())}")
+                
+                # Get predicted_classes
+                if 'predicted_classes' in pred_obj:
+                    predicted_classes = pred_obj['predicted_classes']
+                    app.logger.info(f"📋 Found 'predicted_classes': {predicted_classes}")
+                
+                # Get nested predictions object
+                if 'predictions' in pred_obj:
+                    predictions_dict = pred_obj['predictions']
+                    app.logger.info(f"📋 Found nested 'predictions' dict, keys: {list(predictions_dict.keys()) if isinstance(predictions_dict, dict) else 'not a dict'}")
+                    
+                    if isinstance(predictions_dict, dict):
+                        # Extract edible and poisonous confidence scores
+                        if 'edible' in predictions_dict:
+                            edible_conf = predictions_dict['edible']
+                            app.logger.info(f"📋 Found 'edible' data: {edible_conf}")
+                            if isinstance(edible_conf, dict) and 'confidence' in edible_conf:
+                                class_confidences['edible'] = float(edible_conf['confidence'])
+                                app.logger.info(f"✅ Extracted edible confidence: {class_confidences['edible']}")
+                            elif isinstance(edible_conf, (int, float)):
+                                class_confidences['edible'] = float(edible_conf)
+                                app.logger.info(f"✅ Extracted edible confidence (direct): {class_confidences['edible']}")
+                        
+                        if 'poisonous' in predictions_dict:
+                            poisonous_conf = predictions_dict['poisonous']
+                            app.logger.info(f"📋 Found 'poisonous' data: {poisonous_conf}")
+                            if isinstance(poisonous_conf, dict) and 'confidence' in poisonous_conf:
+                                class_confidences['poisonous'] = float(poisonous_conf['confidence'])
+                                app.logger.info(f"✅ Extracted poisonous confidence: {class_confidences['poisonous']}")
+                            elif isinstance(poisonous_conf, (int, float)):
+                                class_confidences['poisonous'] = float(poisonous_conf)
+                                app.logger.info(f"✅ Extracted poisonous confidence (direct): {class_confidences['poisonous']}")
+                
+                # Fallback: Handle direct predictions structure (model format)
+                elif isinstance(pred_obj, list):
+                    app.logger.info(f"📋 predictions is a list, length: {len(pred_obj)}")
+                    predictions_data = pred_obj
+                    if len(predictions_data) > 0:
+                        top_pred = predictions_data[0]
+                        if isinstance(top_pred, dict):
+                            if 'class' in top_pred:
+                                predicted_classes = [top_pred['class']]
+                            if 'confidence' in top_pred:
+                                class_confidences[top_pred.get('class', 'unknown')] = float(top_pred['confidence'])
+        sys.stdout.flush()
+        
+        # Determine the predicted class and confidence
+        class_name = None
+        confidence = None
+        
+        # Use predicted_classes if available (this is the most reliable)
+        if predicted_classes and len(predicted_classes) > 0:
+            class_name = predicted_classes[0]
+            # Get confidence for the predicted class
+            if class_name in class_confidences:
+                confidence = class_confidences[class_name]
+            else:
+                # If we don't have confidence for predicted class, use the highest available
+                if class_confidences:
+                    confidence = max(class_confidences.values())
+                    app.logger.warning(f"⚠️ Using highest confidence ({confidence}) since {class_name} confidence not found")
+        else:
+            # Fall back to highest confidence class if predicted_classes not available
+            if class_confidences:
+                class_name = max(class_confidences, key=class_confidences.get)
+                confidence = class_confidences[class_name]
+                app.logger.warning(f"⚠️ Using highest confidence class: {class_name} ({confidence})")
+        
+        if class_name is None or confidence is None:
+            app.logger.error(f"❌ Could not extract class and confidence from result")
+            sys.stdout.flush()
+            return None
+        
+        app.logger.info(f"✅ Extracted classification: {class_name} (confidence: {confidence})")
+        sys.stdout.flush()
+        
+        # Map Roboflow classes to our database
+        roboflow_to_database = {
+            'edible': {'edible': True, 'poisonous': False},
+            'poisonous': {'edible': False, 'poisonous': True}
+        }
+        
+        safety_info = roboflow_to_database.get(class_name.lower(), {'edible': False, 'poisonous': False})
+        
+        # Create result object
+        result = {
+            'id': 999,  # Special ID for Roboflow results
+            'name': f"AI Classification: {class_name.title()}",
+            'scientific_name': f"Roboflow Workflow Prediction",
+            'edible': safety_info['edible'],
+            'poisonous': safety_info['poisonous'],
+            'taste': get_roboflow_taste_description(class_name),
+            'habitat': 'AI Classification - Verify with experts',
+            'season': 'AI Classification - Verify with experts',
+            'confidence': round(confidence, 4),
+            'uploaded_image': uploaded_image_data,
+            'ml_class': class_name,
+            'method': 'Roboflow Workflow AI',
+            'all_confidences': class_confidences  # Include all confidence scores for debugging
+        }
+        
+        return result
+        
+    except Exception as e:
+        app.logger.error(f"❌ Error processing Roboflow result: {e}")
+        import traceback
+        app.logger.error(traceback.format_exc())
+        sys.stdout.flush()
         return None
-    
-    predictions = roboflow_result['predictions']
-    if not predictions:
-        return None
-    
-    # Convert uploaded image to base64 for display
-    image_buffer = io.BytesIO()
-    uploaded_image.save(image_buffer, format='PNG')
-    image_base64 = base64.b64encode(image_buffer.getvalue()).decode('utf-8')
-    uploaded_image_data = f"data:image/png;base64,{image_base64}"
-    
-    # Get the top prediction
-    top_prediction = predictions[0]
-    class_name = top_prediction['class']
-    confidence = top_prediction['confidence']
-    
-    # Map Roboflow classes to our database
-    roboflow_to_database = {
-        'edible': {'edible': True, 'poisonous': False, 'psychedelic': False},
-        'poisonous': {'edible': False, 'poisonous': True, 'psychedelic': False}
-    }
-    
-    safety_info = roboflow_to_database.get(class_name, {'edible': False, 'poisonous': False, 'psychedelic': False})
-    
-    # Create result object
-    result = {
-        'id': 999,  # Special ID for Roboflow results
-        'name': f"Roboflow: {class_name.title()}",
-        'scientific_name': f"AI Classification: {class_name}",
-        'edible': safety_info['edible'],
-        'poisonous': safety_info['poisonous'],
-        'psychedelic': safety_info['psychedelic'],
-        'taste': get_roboflow_taste_description(class_name),
-        'habitat': 'AI Classification - Verify with experts',
-        'season': 'AI Classification - Verify with experts',
-        'confidence': confidence,
-        'uploaded_image': uploaded_image_data,
-        'ml_class': class_name,
-        'method': 'Roboflow AI'
-    }
-    
-    return result
 
 def get_roboflow_taste_description(class_name):
     """Get taste description for Roboflow classification"""
@@ -584,7 +653,6 @@ def check_safety():
     safety_info = {
         "safe_to_eat": mushroom['edible'] and not mushroom['poisonous'],
         "poisonous": mushroom['poisonous'],
-        "psychedelic": mushroom['psychedelic'],
         "warning": ""
     }
     
@@ -599,8 +667,6 @@ def check_safety():
             safety_info["warning"] = "☠️ EXTREMELY DANGEROUS - False Morel contains gyromitrin toxin. Can cause severe poisoning and death!"
         else:
             safety_info["warning"] = "⚠️ POISONOUS - Do not consume! Can cause severe illness or death."
-    elif mushroom['psychedelic']:
-        safety_info["warning"] = "⚠️ PSYCHOACTIVE - Contains hallucinogenic compounds. Not recommended for consumption."
     elif mushroom['edible']:
         safety_info["warning"] = "✅ Generally safe to eat when properly identified by experts"
     else:
@@ -608,65 +674,6 @@ def check_safety():
     
     return jsonify(safety_info)
 
-@app.route('/api/predict-safety', methods=['POST'])
-def predict_safety():
-    """Predict mushroom safety using the trained ML model"""
-    if not all([ml_models.get('safety_model'), ml_models.get('label_encoders'), ml_models.get('target_encoder')]):
-        return jsonify({
-            "error": "Safety prediction model not available",
-            "message": "Please ensure the model is trained and available"
-        }), 503
-    
-    try:
-        data = request.get_json()
-        features = data.get('features', {})
-        
-        if not features:
-            return jsonify({"error": "No features provided"}), 400
-        
-        # Create DataFrame with features
-        df = pd.DataFrame([features])
-        
-        # Encode categorical features
-        for column, encoder in ml_models['label_encoders'].items():
-            if column in df.columns:
-                if df[column].iloc[0] in encoder.classes_:
-                    df[column] = encoder.transform(df[column])
-                else:
-                    return jsonify({
-                        "error": f"Invalid value '{df[column].iloc[0]}' for feature '{column}'",
-                        "valid_values": list(encoder.classes_)
-                    }), 400
-        
-        # Make prediction
-        prediction = ml_models['safety_model'].predict(df)[0]
-        probabilities = ml_models['safety_model'].predict_proba(df)[0]
-        
-        # Decode prediction
-        predicted_class = ml_models['target_encoder'].inverse_transform([prediction])[0]
-        confidence = max(probabilities)
-        
-        # Get class probabilities
-        class_probs = dict(zip(ml_models['target_encoder'].classes_, probabilities))
-        
-        result = {
-            "prediction": predicted_class,
-            "confidence": float(confidence),
-            "probabilities": class_probs,
-            "safety": "edible" if predicted_class == 'e' else "poisonous",
-            "warning": ""
-        }
-        
-        # Add safety warnings
-        if predicted_class == 'p':
-            result["warning"] = "⚠️ POISONOUS - DO NOT CONSUME! Can cause severe illness or death!"
-        else:
-            result["warning"] = "✅ EDIBLE - However, ALWAYS verify with experts before consumption!"
-        
-        return jsonify(result)
-        
-    except Exception as e:
-        return jsonify({"error": f"Prediction failed: {str(e)}"}), 500
 
 @app.route('/api/roboflow-identify', methods=['POST'])
 def roboflow_identify():
@@ -696,107 +703,68 @@ def roboflow_identify():
 
 @app.route('/api/kaggle-status', methods=['GET'])
 def get_kaggle_status():
-    """Get the status of the Kaggle dataset and ML models"""
-    safety_model_available = all([ml_models.get('safety_model'), ml_models.get('label_encoders'), ml_models.get('target_encoder')])
-    image_model_available = all([ml_models.get('image_model'), ml_models.get('class_mapping')])
-    
+    """Get the status of the Roboflow API integration"""
     return jsonify({
         "dataset_available": True,
-        "dataset_type": "Feature-based classification",
-        "total_samples": 8124,
+        "dataset_type": "Roboflow cloud-based classification",
+        "total_samples": "Cloud-based dataset",
         "classes": ["edible", "poisonous"],
-        "features": 22,
-        "safety_model_available": safety_model_available,
-        "image_model_available": image_model_available,
+        "features": "Image-based classification",
+        "safety_model_available": False,
+        "image_model_available": False,
         "roboflow_available": True,
-        "roboflow_model_id": ROBOFLOW_MODEL_ID,
-        "message": "All models ready" if safety_model_available and image_model_available else "Some models not loaded"
+        "roboflow_workflow_id": ROBOFLOW_WORKFLOW_ID,
+        "roboflow_workspace": ROBOFLOW_WORKSPACE,
+        "roboflow_api_key_set": bool(ROBOFLOW_API_KEY),
+        "workflow_endpoint": f"{ROBOFLOW_WORKFLOW_API_URL}/{ROBOFLOW_WORKSPACE}/workflows/{ROBOFLOW_WORKFLOW_ID}",
+        "workflow_parameters": {
+            "iou": ROBOFLOW_IOU,
+            "max_detections": ROBOFLOW_MAX_DETECTIONS,
+            "confidence": ROBOFLOW_CONFIDENCE
+        },
+        "message": "Using Roboflow Workflow API for mushroom identification"
     })
 
-@app.route('/api/feature-codes', methods=['GET'])
-def get_feature_codes():
-    """Get the feature code mappings for the Kaggle dataset"""
-    feature_codes = {
-        "cap-shape": {
-            "x": "convex", "b": "bell", "s": "sunken", "f": "flat", "k": "knobbed", "c": "conical"
+@app.route('/api/test-workflow', methods=['GET'])
+def test_workflow():
+    """Test endpoint to verify workflow configuration"""
+    workflow_endpoint = f"{ROBOFLOW_WORKFLOW_API_URL}/{ROBOFLOW_WORKSPACE}/workflows/{ROBOFLOW_WORKFLOW_ID}"
+    return jsonify({
+        "workspace": ROBOFLOW_WORKSPACE,
+        "workflow_id": ROBOFLOW_WORKFLOW_ID,
+        "workflow_endpoint": workflow_endpoint,
+        "api_key_set": bool(ROBOFLOW_API_KEY),
+        "api_key_preview": f"{ROBOFLOW_API_KEY[:10]}..." if ROBOFLOW_API_KEY else "Not set",
+        "workflow_parameters": {
+            "iOU": ROBOFLOW_IOU,
+            "max_detections": ROBOFLOW_MAX_DETECTIONS,
+            "confidence": ROBOFLOW_CONFIDENCE
         },
-        "cap-surface": {
-            "s": "smooth", "y": "scaly", "f": "fibrous", "g": "grooves"
+        "request_method": "POST",
+        "request_format": "JSON",
+        "request_body": {
+            "api_key": "YOUR_API_KEY",
+            "inputs": {
+                "image": "base64_encoded_image_string",
+                "iOU": ROBOFLOW_IOU,
+                "max_detections": ROBOFLOW_MAX_DETECTIONS,
+                "confidence": ROBOFLOW_CONFIDENCE
+            }
         },
-        "cap-color": {
-            "n": "brown", "b": "buff", "c": "cinnamon", "g": "gray", "r": "green", 
-            "p": "pink", "u": "purple", "e": "red", "w": "white", "y": "yellow"
+        "workflow_schema": {
+            "inputs": [
+                {"type": "WorkflowParameter", "name": "iOU", "default_value": 0.5},
+                {"type": "WorkflowParameter", "name": "max_detections", "default_value": 50},
+                {"type": "WorkflowParameter", "name": "confidence", "default_value": 0.4},
+                {"type": "InferenceImage", "name": "image"}
+            ]
         },
-        "bruises": {
-            "t": "bruises", "f": "no"
-        },
-        "odor": {
-            "n": "none", "a": "almond", "l": "anise", "c": "creosote", "y": "fishy", 
-            "f": "foul", "m": "musty", "p": "pungent", "s": "spicy"
-        },
-        "gill-attachment": {
-            "f": "free", "a": "attached"
-        },
-        "gill-spacing": {
-            "c": "close", "w": "crowded"
-        },
-        "gill-size": {
-            "b": "broad", "n": "narrow"
-        },
-        "gill-color": {
-            "w": "white", "n": "brown", "b": "buff", "h": "chocolate", "g": "gray", 
-            "r": "green", "o": "orange", "p": "pink", "e": "red", "u": "purple", 
-            "k": "black", "y": "yellow"
-        },
-        "stalk-shape": {
-            "e": "enlarging", "t": "tapering"
-        },
-        "stalk-root": {
-            "e": "equal", "c": "club", "b": "bulbous", "r": "rooted", "?": "missing"
-        },
-        "stalk-surface-above-ring": {
-            "s": "smooth", "f": "fibrous", "y": "scaly", "k": "silky"
-        },
-        "stalk-surface-below-ring": {
-            "s": "smooth", "f": "fibrous", "y": "scaly", "k": "silky"
-        },
-        "stalk-color-above-ring": {
-            "w": "white", "n": "brown", "b": "buff", "c": "cinnamon", "g": "gray", 
-            "o": "orange", "p": "pink", "e": "red", "y": "yellow"
-        },
-        "stalk-color-below-ring": {
-            "w": "white", "n": "brown", "b": "buff", "c": "cinnamon", "g": "gray", 
-            "o": "orange", "p": "pink", "e": "red", "y": "yellow"
-        },
-        "veil-type": {
-            "p": "partial"
-        },
-        "veil-color": {
-            "w": "white", "n": "brown", "o": "orange", "y": "yellow"
-        },
-        "ring-number": {
-            "o": "one", "t": "two", "n": "none"
-        },
-        "ring-type": {
-            "p": "pendant", "e": "evanescent", "f": "flaring", "l": "large", "n": "none"
-        },
-        "spore-print-color": {
-            "w": "white", "n": "brown", "b": "buff", "h": "chocolate", "r": "green", 
-            "o": "orange", "u": "purple", "k": "black", "y": "yellow"
-        },
-        "population": {
-            "s": "scattered", "n": "numerous", "a": "abundant", "v": "several", 
-            "y": "clustered", "c": "clustered"
-        },
-        "habitat": {
-            "g": "grasses", "l": "leaves", "m": "meadows", "p": "paths", 
-            "u": "urban", "w": "waste", "d": "woods"
-        }
-    }
-    
-    return jsonify(feature_codes)
+        "message": "Workflow endpoint configured. Test by uploading an image through the /api/identify endpoint."
+    })
+
 
 if __name__ == '__main__':
     init_sample_data()
     port = int(os.environ.get('PORT', 5001))
-    app.run(debug=False, host='0.0.0.0', port=port)
+    # Enable debug mode to see detailed logs and auto-reload
+    app.run(debug=True, host='0.0.0.0', port=port, use_reloader=False)
