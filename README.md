@@ -72,95 +72,85 @@ export ROBOFLOW_API_KEY="your_roboflow_api_key_here"
 
 ```bash
 # Terminal 1: Python backend
-cd /Users/henrik/INFO212Project
-source venv/bin/activate
-pip install -r requirements.txt
-# ensure ROBOFLOW_API_KEY is set in your environment (see step 2)
-python app.py
+# 🍄 Mushroom Classifier
 
-# Terminal 2: React frontend
-cd /Users/henrik/INFO212Project
+A concise, focused README explaining how the project works, how to configure it, and how to run it locally.
+
+## What this project does
+
+- Frontend: React app that lets a user upload a mushroom image.
+- Backend: Flask API that accepts the image and forwards it to a Roboflow Workflow for classification.
+- Output: the backend returns a single identification result (class: `edible` / `poisonous`) and a confidence score. The frontend displays the uploaded image, the predicted class, and the confidence percentage.
+
+This app is for demonstration and educational purposes only — always consult a professional before making any safety or consumption decisions.
+
+## Key details
+
+- Image inference is performed by a Roboflow Workflow (cloud-hosted). The app posts the uploaded image to `/api/identify`, the backend calls the Roboflow Workflow API, and returns a normalized result.
+- The backend includes a simulation fallback used only when Roboflow is unreachable. In normal development and production the Roboflow response is used.
+
+## Configuration
+
+1. Create and activate a Python virtualenv in the project root:
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+2. Install Python dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+3. Set your Roboflow API key in the environment:
+```bash
+export ROBOFLOW_API_KEY="<your_roboflow_api_key>"
+```
+
+Note: do NOT commit API keys to source control. Store them in environment variables or a secrets manager.
+
+## Run the app locally
+
+1. Start the Flask backend (default port 5001):
+```bash
+source venv/bin/activate
+python app.py
+```
+
+2. In a separate terminal, start the React frontend:
+```bash
 npm install
 npm start
 ```
 
-### 4. Open Your Browser
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:5001
+Open the frontend at http://localhost:3000 — it proxies API requests to the backend at http://localhost:5001.
 
-## 🔌 API Endpoints
+## API (minimal)
 
-- `GET /api/mushrooms` - Get all mushrooms
-- `GET /api/mushrooms/<id>` - Get specific mushroom
--- `POST /api/identify` - Upload an image for identification (uses Roboflow Workflow API; falls back to simulation if unavailable)
-- `POST /api/check-safety` - Check mushroom safety
-- `GET /api/search?q=<query>` - Search mushrooms
--- `GET /api/kaggle-status` - (legacy) returns Roboflow/workflow status and configuration
+- POST /api/identify — multipart/form-data with key `image`. Returns JSON with `matches` (first match used by the UI), `method`, and `message`.
+- GET /api/mushrooms — list of mushrooms used by the UI (sample data).
+- POST /api/check-safety — checks safety for a mushroom id.
+- GET /api/kaggle-status — (legacy) returns Roboflow/workflow status and configuration for diagnostic use.
 
-## 🍄 Mushroom Species
+The frontend expects the identify response to include at least:
+- `matches[0].ml_class` (string, e.g., `poisonous`)
+- `matches[0].confidence` (float 0..1) or `matches[0].all_confidences` mapping
+- `matches[0].uploaded_image` (optional data URL for display)
 
-1. **Chanterelle** - Edible, delicious
-2. **Death Cap** - Extremely poisonous
-3. **Fly Agaric** - Poisonous
-4. **Psilocybe Cubensis** - Not recommended for consumption
-5. **Porcini** - Edible, gourmet
-6. **Destroying Angel** - Extremely poisonous
-7. **Morel** - Edible, prized
-8. **False Morel** - Poisonous
+## Testing
 
-## 🎨 Features
+- Unit tests (Python): run `pytest` in the project root (ensure venv is active).
 
-### **Safety First**
-- Clear warnings for poisonous mushrooms
-- Detailed safety information
+## Security & Privacy
 
-### **User Experience**
-- Beautiful, modern interface
-- Dark/light theme toggle
-- Responsive design for all devices
-- Intuitive navigation
+- Images uploaded to the backend may be temporarily saved for inference. Do not upload private or sensitive images.
+- Keep Roboflow API keys secret (use environment variables).
 
-### **Data Quality**
-- Expert-verified mushroom information
-- High-quality images
-- Comprehensive safety warnings
+## Disclaimer
 
-## 🔒 Safety Disclaimer
-
-**⚠️ IMPORTANT**: This application is for educational purposes only. 
-- **Never consume mushrooms** based solely on app identification
-- **Always consult experts** before eating wild mushrooms
-- **When in doubt, throw it out**
-- **Mushroom poisoning can be fatal**
-
-## 🚧 Current Status
-
-- ✅ **Basic mushroom database** - Complete
-- ✅ **Safety checking** - Complete
-- ✅ **Identification simulation** - Complete
-- ✅ **Kaggle dataset integration** - Complete
-- 🔄 **ML training** - Ready to implement
-- 🔄 **Real image identification** - Future enhancement
-
-## 🎯 Next Steps
-
-1. **Train ML model** on Kaggle dataset for safety prediction
-2. **Add more mushroom species** to the database
-3. **Implement real image identification** with trained model
-4. **Expand mushroom species coverage**
-
-## 🤝 Contributing
-
-This is a prototype project. Feel free to:
-- Report bugs or issues
-- Suggest new features
-- Improve the UI/UX
-- Add more mushroom data
-
-## 📝 License
-
-Educational project - use responsibly and always prioritize safety when dealing with mushrooms.
+This project returns only a class label and confidence score. It does not provide a definitive identification. Always consult a qualified mycologist or medical professional for safety-critical decisions.
 
 ---
 
-**🍄 Stay safe and happy mushroom hunting! (But don't eat anything you're not 100% sure about!)**
+If you'd like the README shortened further or to include additional developer notes (tests, CI, hosting), tell me which sections to add or remove.
+- Suggest new features
