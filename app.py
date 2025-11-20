@@ -472,16 +472,23 @@ def process_roboflow_result(roboflow_result, uploaded_image):
         image_base64 = base64.b64encode(image_buffer.getvalue()).decode('utf-8')
         uploaded_image_data = f"data:image/png;base64,{image_base64}"
         
-        # Handle workflow output format
-        # Workflow returns: [{"output3": 0.5, "output2": 50, "output": 0.4, "predictions": {...}}]
-        # Where predictions.predictions contains edible/poisonous with confidence scores
+        # Handle workflow output format robustly
+        # Roboflow workflow responses can come as:
+        # - a list: [{...}]
+        # - a dict with an 'outputs' list: {"outputs": [{...}]}
+        # The actual predictions are often nested at: outputs[0]['predictions'] and may include
+        # a nested 'predictions' dict plus 'predicted_classes'. We'll normalize to pred_obj.
         predictions_data = None
         predicted_classes = None
         class_confidences = {}
-        
-        # Check if result is an array (workflow format)
+
+        # Normalize to a single workflow_item dict if possible
         workflow_item = None
-        if isinstance(roboflow_result, list) and len(roboflow_result) > 0:
+        if isinstance(roboflow_result, dict) and 'outputs' in roboflow_result and isinstance(roboflow_result['outputs'], list) and len(roboflow_result['outputs']) > 0:
+            workflow_item = roboflow_result['outputs'][0]
+            app.logger.info(f"📋 Result contains 'outputs', using first output item")
+            app.logger.info(f"📋 First output keys: {list(workflow_item.keys()) if isinstance(workflow_item, dict) else 'Not a dict'}")
+        elif isinstance(roboflow_result, list) and len(roboflow_result) > 0:
             workflow_item = roboflow_result[0]
             app.logger.info(f"📋 Result is an array, using first item")
             app.logger.info(f"📋 First item keys: {list(workflow_item.keys()) if isinstance(workflow_item, dict) else 'Not a dict'}")
@@ -493,60 +500,61 @@ def process_roboflow_result(roboflow_result, uploaded_image):
             app.logger.error(f"❌ Unexpected result type: {type(roboflow_result)}")
             sys.stdout.flush()
             return None
-        
-        # Extract predictions from workflow item
+
+        # Try to locate the predictions object in known places
+        pred_obj = None
+        # Common: workflow_item has a 'predictions' key (which itself is a dict containing nested 'predictions')
         if isinstance(workflow_item, dict) and 'predictions' in workflow_item:
             pred_obj = workflow_item['predictions']
-            app.logger.info(f"📋 Found 'predictions' key, type: {type(pred_obj)}")
-            
-            # Handle nested predictions structure
-            # Format: {"predictions": {"predictions": {"edible": {...}, "poisonous": {...}}, "predicted_classes": [...]}}
-            if isinstance(pred_obj, dict):
-                app.logger.info(f"📋 predictions is a dict, keys: {list(pred_obj.keys())}")
-                
-                # Get predicted_classes
-                if 'predicted_classes' in pred_obj:
-                    predicted_classes = pred_obj['predicted_classes']
-                    app.logger.info(f"📋 Found 'predicted_classes': {predicted_classes}")
-                
-                # Get nested predictions object
-                if 'predictions' in pred_obj:
-                    predictions_dict = pred_obj['predictions']
-                    app.logger.info(f"📋 Found nested 'predictions' dict, keys: {list(predictions_dict.keys()) if isinstance(predictions_dict, dict) else 'not a dict'}")
-                    
-                    if isinstance(predictions_dict, dict):
-                        # Extract edible and poisonous confidence scores
-                        if 'edible' in predictions_dict:
-                            edible_conf = predictions_dict['edible']
-                            app.logger.info(f"📋 Found 'edible' data: {edible_conf}")
-                            if isinstance(edible_conf, dict) and 'confidence' in edible_conf:
-                                class_confidences['edible'] = float(edible_conf['confidence'])
-                                app.logger.info(f"✅ Extracted edible confidence: {class_confidences['edible']}")
-                            elif isinstance(edible_conf, (int, float)):
-                                class_confidences['edible'] = float(edible_conf)
-                                app.logger.info(f"✅ Extracted edible confidence (direct): {class_confidences['edible']}")
-                        
-                        if 'poisonous' in predictions_dict:
-                            poisonous_conf = predictions_dict['poisonous']
-                            app.logger.info(f"📋 Found 'poisonous' data: {poisonous_conf}")
-                            if isinstance(poisonous_conf, dict) and 'confidence' in poisonous_conf:
-                                class_confidences['poisonous'] = float(poisonous_conf['confidence'])
-                                app.logger.info(f"✅ Extracted poisonous confidence: {class_confidences['poisonous']}")
-                            elif isinstance(poisonous_conf, (int, float)):
-                                class_confidences['poisonous'] = float(poisonous_conf)
-                                app.logger.info(f"✅ Extracted poisonous confidence (direct): {class_confidences['poisonous']}")
-                
-                # Fallback: Handle direct predictions structure (model format)
-                elif isinstance(pred_obj, list):
-                    app.logger.info(f"📋 predictions is a list, length: {len(pred_obj)}")
-                    predictions_data = pred_obj
-                    if len(predictions_data) > 0:
-                        top_pred = predictions_data[0]
-                        if isinstance(top_pred, dict):
-                            if 'class' in top_pred:
-                                predicted_classes = [top_pred['class']]
-                            if 'confidence' in top_pred:
-                                class_confidences[top_pred.get('class', 'unknown')] = float(top_pred['confidence'])
+            app.logger.info(f"📋 Found 'predictions' key in workflow_item, type: {type(pred_obj)}")
+        # Some responses embed predictions under workflow_item['outputs'] or similar; already normalized above.
+        # If pred_obj is still None, check top-level keys for 'predictions'
+        elif isinstance(workflow_item, dict):
+            # As a fallback, search nested dicts for 'predictions' key
+            for k, v in workflow_item.items():
+                if isinstance(v, dict) and 'predictions' in v:
+                    pred_obj = v
+                    app.logger.info(f"📋 Found nested 'predictions' under key '{k}'")
+                    break
+
+        if pred_obj is None:
+            app.logger.error(f"❌ Could not find a 'predictions' object in workflow result")
+            sys.stdout.flush()
+            return None
+
+        # pred_obj is expected to be a dict that may contain:
+        # - 'predicted_classes' (list)
+        # - 'predictions' (dict) where keys are class names and values contain confidence
+        if isinstance(pred_obj, dict):
+            app.logger.info(f"📋 pred_obj keys: {list(pred_obj.keys())}")
+
+            if 'predicted_classes' in pred_obj:
+                predicted_classes = pred_obj['predicted_classes']
+                app.logger.info(f"📋 Found 'predicted_classes': {predicted_classes}")
+
+            # The actual class confidences are often in pred_obj['predictions']
+            if 'predictions' in pred_obj and isinstance(pred_obj['predictions'], dict):
+                predictions_dict = pred_obj['predictions']
+                app.logger.info(f"📋 Found nested 'predictions' dict, keys: {list(predictions_dict.keys())}")
+                # Extract edible and poisonous confidence scores
+                for cls in ['edible', 'poisonous']:
+                    if cls in predictions_dict:
+                        val = predictions_dict[cls]
+                        app.logger.info(f"📋 Found '{cls}' data: {val}")
+                        if isinstance(val, dict) and 'confidence' in val:
+                            class_confidences[cls] = float(val['confidence'])
+                        elif isinstance(val, (int, float)):
+                            class_confidences[cls] = float(val)
+            # Fallback: if pred_obj itself is a list of predictions
+            elif isinstance(pred_obj, list):
+                predictions_data = pred_obj
+                if len(predictions_data) > 0:
+                    top_pred = predictions_data[0]
+                    if isinstance(top_pred, dict):
+                        if 'class' in top_pred:
+                            predicted_classes = [top_pred['class']]
+                        if 'confidence' in top_pred:
+                            class_confidences[top_pred.get('class', 'unknown')] = float(top_pred['confidence'])
         sys.stdout.flush()
         
         # Determine the predicted class and confidence

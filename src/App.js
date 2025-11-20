@@ -202,38 +202,6 @@ function App() {
       setLoading(true);
       setError('');
       setIdentificationResults(null);
-      
-      // Check if we're in production (no backend available)
-      const isProduction = window.location.hostname === 'mushroomproject.app';
-      
-      if (isProduction) {
-        // Simulate identification for demo purposes
-        await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate processing time
-        
-        const simulatedResults = {
-          matches: [
-            {
-              id: 1,
-              name: "Chanterelle",
-              scientific_name: "Cantharellus cibarius",
-              edible: true,
-              poisonous: false,
-              taste: "Delicate, slightly peppery with fruity apricot aroma",
-              habitat: "Forest floors, often near oak and pine trees",
-              season: "Summer to Fall",
-              confidence: 0.85,
-              uploaded_image: URL.createObjectURL(selectedFile),
-              image_url: "/images/chanterelle.jpg"
-            }
-          ],
-          message: "Demo identification - Upload your image to see AI-powered identification!",
-          method: "Demo Mode"
-        };
-        
-        setIdentificationResults(simulatedResults);
-        return;
-      }
-      
       // Create FormData for file upload
       const formData = new FormData();
       formData.append('image', selectedFile);
@@ -345,59 +313,50 @@ function App() {
             </div>
           </div>
           
-          <div className="mushroom-grid">
-            {identificationResults.matches.map((mushroom, index) => (
-              <div key={index} className="mushroom-card">
-                <img 
-                  src={mushroom.uploaded_image || mushroom.image_url} 
-                  alt={mushroom.name}
-                  className="mushroom-image"
-                  onError={(e) => {
-                    e.target.onerror = null;
-                    e.target.src = 'https://via.placeholder.com/400x300/cccccc/666666?text=' + encodeURIComponent(mushroom.name);
-                  }}
-                />
-                <div className="mushroom-info">
-                  <div className="mushroom-header">
-                    <div className="mushroom-name">{mushroom.name}</div>
-                    <div className="mushroom-scientific">{mushroom.scientific_name}</div>
-                    {mushroom.ml_class && (
-                      <div className="ml-class">ML Class: {mushroom.ml_class.replace(/_/g, ' ')}</div>
-                    )}
-                  </div>
-                  
-                  <div className="mushroom-properties">
-                    {mushroom.edible && <span className="property-badge property-edible">Edible</span>}
-                    {mushroom.poisonous && <span className="property-badge property-poisonous">Poisonous</span>}
-                  </div>
+          <div className={`mushroom-grid ${identificationResults && identificationResults.matches && identificationResults.matches.length === 1 ? 'single-centered' : ''}`}>
+            {(() => {
+              // Show a single result card for identification: the first match
+              const mushroom = identificationResults.matches && identificationResults.matches.length > 0 ? identificationResults.matches[0] : null;
+              if (!mushroom) return <div>No results available</div>;
 
-                  <div className="confidence-section">
-                    <div className="confidence-label">
-                      <strong>Confidence:</strong> {Math.round(mushroom.confidence * 100)}%
-                    </div>
-                    <div className="confidence-bar">
-                      <div 
-                        className="confidence-fill" 
-                        style={{ width: `${mushroom.confidence * 100}%` }}
-                      ></div>
-                    </div>
-                  </div>
+              const imageSrc = mushroom.uploaded_image || mushroom.image_url || (selectedFile ? URL.createObjectURL(selectedFile) : null);
+              const mlClass = mushroom.ml_class || (mushroom.name ? mushroom.name : 'Unknown');
+              const confidence = typeof mushroom.confidence === 'number' ? mushroom.confidence : (
+                (mushroom.all_confidences && mushroom.ml_class && mushroom.all_confidences[mushroom.ml_class]) ? mushroom.all_confidences[mushroom.ml_class] : 0
+              );
 
-                  <div className="mushroom-details">
-                    <div className="detail-item">
-                      <strong>Taste:</strong> {mushroom.taste}
+              return (
+                <div className="mushroom-card single-result-card">
+                  <img
+                    src={imageSrc}
+                    alt={mlClass}
+                    className="mushroom-image"
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      e.target.src = 'https://via.placeholder.com/400x300/cccccc/666666?text=' + encodeURIComponent(mlClass);
+                    }}
+                  />
+                  <div className="mushroom-info">
+                    <div className="mushroom-header">
+                      {/* Show only the predicted class label (no species name) */}
+                      <div className="mushroom-class">{(mushroom.ml_class || (mushroom.edible ? 'edible' : (mushroom.poisonous ? 'poisonous' : 'unknown'))).toString().replace(/_/g, ' ').toUpperCase()}</div>
+                    </div>
+
+                    <div className="confidence-section">
+                      <div className="confidence-label">
+                        <strong>Confidence:</strong> {Math.round((confidence || 0) * 100)}%
+                      </div>
+                      <div className="confidence-bar">
+                        <div
+                          className="confidence-fill"
+                          style={{ width: `${(confidence || 0) * 100}%` }}
+                        ></div>
+                      </div>
                     </div>
                   </div>
-                  
-                  <button 
-                    className="btn btn-secondary" 
-                    onClick={() => checkSafety(mushroom.id)}
-                  >
-                    <Shield size={16} /> Check Safety
-                  </button>
                 </div>
-              </div>
-            ))}
+              );
+            })()}
           </div>
           
           {identificationResults.message && (
@@ -526,8 +485,12 @@ function App() {
       <div className="container">
         <div className="header">
           <div className="header-content">
-            <h1>🍄 Mushroom Project Prototype</h1>
+            <h1>🍄 Mushroom Classifier</h1>
             <p>Classify edible and poisonous mushrooms safely (kinda)</p>
+            <div className="top-disclaimer" role="status">
+              <div className="top-disclaimer-title">Disclaimer</div>
+              <div className="top-disclaimer-text">Has to be an image of a mushroom. The app only returns a class (edible / poisonous) and a confidence score. Always consult with a professional before making decisions based on this result.</div>
+            </div>
           </div>
           <div className="theme-toggle">
             <button 

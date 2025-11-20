@@ -17,14 +17,17 @@ A web application for identifying and learning about mushrooms, with a focus on 
 - **Backend**: Flask (Python) REST API
 - **Data**: Kaggle Mushroom Classification Dataset (8,124 samples)
 - **Styling**: CSS Variables for theming, responsive design
+- **Frontend**: React.js with modern CSS
+- **Backend**: Flask (Python) REST API
+- **Data / ML**: Roboflow Workflow API (cloud-hosted image classification)
+- **Styling**: CSS Variables for theming, responsive design
 
-## 📊 Dataset
+## 📊 Data & ML
 
-The app uses the **Kaggle Mushroom Classification Dataset**:
-- **Total samples**: 8,124 mushrooms
-- **Classes**: Edible vs Poisonous
-- **Features**: 23 different characteristics (cap shape, gill color, odor, etc.)
-- **Safety focus**: High accuracy for identifying dangerous mushrooms
+The app uses a cloud-hosted image classification workflow (Roboflow Workflow API) for mushroom identification rather than a local Kaggle dataset.
+- Data source: Roboflow-hosted dataset and model
+- Classes: "edible" and "poisonous"
+- Notes: The classification runs via the Roboflow Workflow API and returns class confidences. The backend also includes a safe simulation/fallback when the API is not available.
 
 ## 🏗️ Project Structure
 
@@ -54,18 +57,30 @@ pip install -r requirements.txt
 npm install
 ```
 
-### 2. Download Kaggle Dataset
+### 2. Configure Roboflow API key
+
+The backend calls a Roboflow Workflow API. Instead of hardcoding secrets, set your Roboflow API key in the environment before starting the backend:
+
 ```bash
-python download_kaggle_dataset.py
+# macOS / Linux (zsh/bash)
+export ROBOFLOW_API_KEY="your_roboflow_api_key_here"
+
+# or use a .env loader in your shell if you prefer
 ```
 
 ### 3. Start the Application
+
 ```bash
-# Terminal 1: Start Flask backend
+# Terminal 1: Python backend
+cd /Users/henrik/INFO212Project
 source venv/bin/activate
+pip install -r requirements.txt
+# ensure ROBOFLOW_API_KEY is set in your environment (see step 2)
 python app.py
 
-# Terminal 2: Start React frontend
+# Terminal 2: React frontend
+cd /Users/henrik/INFO212Project
+npm install
 npm start
 ```
 
@@ -77,10 +92,10 @@ npm start
 
 - `GET /api/mushrooms` - Get all mushrooms
 - `GET /api/mushrooms/<id>` - Get specific mushroom
-- `POST /api/identify` - Simulate mushroom identification
+-- `POST /api/identify` - Upload an image for identification (uses Roboflow Workflow API; falls back to simulation if unavailable)
 - `POST /api/check-safety` - Check mushroom safety
 - `GET /api/search?q=<query>` - Search mushrooms
-- `GET /api/kaggle-status` - Get dataset status
+-- `GET /api/kaggle-status` - (legacy) returns Roboflow/workflow status and configuration
 
 ## 🍄 Mushroom Species
 

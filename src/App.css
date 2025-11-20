@@ -400,6 +400,51 @@
   line-height: 1.6;
 }
 
+/* Top disclaimer under the header */
+.top-disclaimer {
+  margin-top: 14px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary);
+  border-radius: 12px;
+  font-size: 0.95rem;
+  max-width: 880px;
+  margin-left: auto;
+  margin-right: auto;
+  text-align: center;
+  border: 1px solid rgba(255,255,255,0.04);
+  display: inline-block;
+  padding: 12px 18px;
+}
+
+[data-theme="dark"] .top-disclaimer {
+  background: rgba(255,255,255,0.02);
+  color: var(--text-tertiary);
+  border: 1px solid rgba(255,255,255,0.04);
+}
+
+.top-disclaimer-title {
+  font-weight: 800;
+  font-size: 1rem;
+  color: #000000; /* solid black in light mode for maximum contrast */
+  margin-bottom: 6px;
+}
+
+[data-theme="dark"] .top-disclaimer-title {
+  color: #ffffff; /* solid white in dark mode */
+}
+
+.top-disclaimer-text {
+  color: #000000; /* solid black in light mode for clarity */
+  font-size: 0.95rem;
+  line-height: 1.4;
+  max-width: 760px;
+}
+
+[data-theme="dark"] .top-disclaimer-text {
+  color: #f8fafc; /* light text in dark mode */
+}
+
 /* Theme toggle */
 .theme-toggle {
   position: absolute;
@@ -711,6 +756,14 @@
   margin-top: 30px;
 }
 
+/* Center single result card horizontally (and vertically if space allows) */
+.mushroom-grid.single-centered {
+  grid-template-columns: 1fr;
+  justify-items: center;
+  justify-content: center;
+  align-items: center;
+}
+
 .mushroom-card {
   background: var(--bg-card);
   border-radius: 16px;
@@ -732,12 +785,37 @@
   transition: transform 0.3s ease;
 }
 
+/* Single result card tweaks */
+.single-result-card {
+  max-width: 780px; /* slightly smaller horizontally */
+  width: 70%;       /* responsive — occupy a comfortable portion of the viewport */
+  margin: 0 auto;
+  display: block;
+}
+
+.single-result-card .mushroom-image {
+  height: 320px;                /* slightly shorter so card is less tall */
+  object-fit: contain;          /* show the entire image without cropping */
+  object-position: center center;
+  background: var(--bg-card);   /* provide a consistent background if aspect ratios differ */
+  filter: saturate(0.98) contrast(1.02);
+  display: block;
+  margin: 0 auto;
+}
+
 .mushroom-card:hover .mushroom-image {
   transform: scale(1.05);
 }
 
 .mushroom-info {
   padding: 25px;
+}
+
+.mushroom-class {
+  font-size: 1.8rem;
+  font-weight: 800;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
 }
 
 .mushroom-header {
@@ -822,6 +900,40 @@
   height: 100%;
   background: linear-gradient(90deg, #28a745, #20c997);
   transition: width 0.5s ease;
+}
+
+/* Dark-mode specific aesthetics for the single result card */
+[data-theme="dark"] .single-result-card {
+  border: 1px solid rgba(255,255,255,0.06);
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+  box-shadow: 0 18px 50px rgba(0,0,0,0.6);
+}
+
+[data-theme="dark"] .single-result-card .mushroom-info {
+  color: var(--text-white);
+  background: transparent;
+  padding: 28px;
+}
+
+[data-theme="dark"] .mushroom-class {
+  /* gradient text for a subtle pop on dark */
+  background: linear-gradient(90deg, var(--accent-secondary), var(--accent-primary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+[data-theme="dark"] .confidence-label {
+  color: var(--text-tertiary);
+}
+
+[data-theme="dark"] .confidence-fill {
+  background: linear-gradient(90deg, var(--accent-secondary), var(--accent-primary));
+  box-shadow: 0 6px 18px rgba(102,126,234,0.15) inset;
+}
+
+[data-theme="dark"] .mushroom-image {
+  /* give image a subtle vignette via pseudo-element alternative: add overlay color by lowering brightness */
+  filter: brightness(0.95) saturate(0.95);
 }
 
 /* Loading improvements */
