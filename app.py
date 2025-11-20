@@ -33,6 +33,7 @@ app.logger.setLevel(logging.DEBUG)
 logging.getLogger('werkzeug').setLevel(logging.DEBUG)
 
 # Roboflow configuration - Using Workflow API
+# NOTE: Reverted to original hard-coded values per user request
 ROBOFLOW_WORKFLOW_API_URL = "https://serverless.roboflow.com"
 ROBOFLOW_API_KEY = "n2XmYmT5JN31JxXN6T14"  # Private API key
 ROBOFLOW_WORKSPACE = "mushroommodel"  # Workspace name from workflow URL
